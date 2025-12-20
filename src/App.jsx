@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
+import { io } from 'socket.io-client';
 import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye } from 'lucide-react';
 
 const STORAGE_KEY = 'karaoke_songs';
@@ -86,420 +87,6 @@ const parseSongsFromCSV = (text) => {
 
   return { songs, errors };
 };
-
-const loadSongsFromStorage = () => {
-  if (typeof localStorage === 'undefined') return null;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return null;
-    return parsed;
-  } catch (err) {
-    console.error('Errore lettura storage', err);
-    return null;
-  }
-};
-
-const saveSongsToStorage = (songs) => {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
-  } catch (err) {
-    console.error('Errore salvataggio storage', err);
-  }
-};
-
-// ============================================================================
-// SIMULAZIONE BACKEND (in produzione sostituire con Socket.io reale)
-// ============================================================================
-
-class MockBackend {
-  constructor() {
-    this.users = [];
-    const storedSongs = loadSongsFromStorage();
-    this.songs = storedSongs && storedSongs.length > 0 ? storedSongs : this.generateMockSongs();
-    this.rounds = [];
-    this.votes = [];
-    this.currentRound = null;
-    this.listeners = [];
-
-    if (!storedSongs || storedSongs.length === 0) {
-      saveSongsToStorage(this.songs);
-    }
-  }
-
-  generateMockSongs() {
-    const titles = [
-      "Bohemian Rhapsody", "Sweet Child O' Mine", "Hotel California", 
-      "Livin' On A Prayer", "Don't Stop Believin'", "Every Breath You Take",
-      "Billie Jean", "Like a Prayer", "Wonderwall", "Mr. Brightside",
-      "Take On Me", "Africa", "Sweet Caroline", "Dancing Queen",
-      "Smells Like Teen Spirit", "Lose Yourself", "Rolling in the Deep",
-      "Shape of You", "Uptown Funk", "Shake It Off", "Despacito",
-      "Old Town Road", "Blinding Lights", "Someone Like You", "Halo"
-    ];
-    
-    const artists = [
-      "Queen", "Guns N' Roses", "Eagles", "Bon Jovi", "Journey",
-      "The Police", "Michael Jackson", "Madonna", "Oasis", "The Killers",
-      "a-ha", "Toto", "Neil Diamond", "ABBA", "Nirvana",
-      "Eminem", "Adele", "Ed Sheeran", "Mark Ronson", "Taylor Swift",
-      "Luis Fonsi", "Lil Nas X", "The Weeknd", "Adele", "Beyoncé"
-    ];
-
-    return titles.map((title, i) => ({
-      id: i + 1,
-      title,
-      artist: artists[i],
-      year: 1970 + Math.floor(Math.random() * 50)
-    }));
-  }
-
-  on(event, callback) {
-    const listener = { event, callback };
-    this.listeners.push(listener);
-    return () => {
-      this.listeners = this.listeners.filter(l => l !== listener);
-    };
-  }
-
-  emit(event, data) {
-    this.listeners
-      .filter(l => l.event === event)
-      .forEach(l => l.callback(data));
-  }
-
-  getRoundSnapshot() {
-    if (!this.currentRound) return null;
-    return {
-      ...this.currentRound,
-      songs: this.currentRound.songs ? [...this.currentRound.songs] : [],
-      votes: this.currentRound.votes ? [...this.currentRound.votes] : []
-    };
-  }
-
-  emitRoundUpdate() {
-    const snapshot = this.getRoundSnapshot();
-    if (snapshot) {
-      this.emit('round:updated', snapshot);
-    }
-  }
-
-  replaceSongs(songs) {
-    this.songs = songs;
-    saveSongsToStorage(songs);
-    this.currentRound = null;
-    this.votes = [];
-    this.emit('songs:updated', this.songs);
-    this.emit('round:reset');
-  }
-
-  resetRound() {
-    this.currentRound = null;
-    this.votes = [];
-    this.emit('round:reset');
-  }
-
-  removeUser(id) {
-    const user = this.users.find(u => u.id === id);
-    if (!user) return;
-    this.users = this.users.filter(u => u.id !== id);
-    this.votes = this.votes.filter(v => v.userId !== id);
-    if (this.currentRound?.votes) {
-      this.currentRound.votes = this.currentRound.votes.filter(v => v.userId !== id);
-    }
-    this.emitRoundUpdate();
-    this.emit('user:removed', id);
-  }
-
-  registerUser(name, photo) {
-    const user = {
-      id: Date.now(),
-      name,
-      photo,
-      joinedAt: new Date()
-    };
-    this.users.push(user);
-    this.emit('user:registered', user);
-    return user;
-  }
-
-  startRound(category, params = {}) {
-    let roundData;
-    
-    switch(category) {
-      case 'poll': {
-        const prepared = this.preparePollRound();
-        if (prepared?.error) return prepared;
-        return this.openPollVoting();
-      }
-      case 'duet':
-        roundData = this.prepareDuet();
-        break;
-      case 'wheel':
-        roundData = this.prepareWheel();
-        break;
-      case 'free_choice':
-        roundData = this.prepareFreeChoice();
-        break;
-      case 'year':
-        roundData = this.prepareYear(params.year);
-        break;
-      case 'pass_mic':
-        roundData = this.preparePassMic();
-        break;
-      default:
-        return;
-    }
-
-    this.currentRound = {
-      id: Date.now(),
-      category,
-      state: roundData?.votingOpen ? 'voting' : 'in_progress',
-      ...roundData,
-      votes: []
-    };
-
-    const snapshot = this.getRoundSnapshot();
-    this.emit('round:started', snapshot);
-    this.emitRoundUpdate();
-    return snapshot;
-  }
-
-  preparePoll(votingOpen = true) {
-    const selectedSongs = [...this.songs]
-      .sort(() => Math.random() - 0.5)
-      .slice(0, 10);
-
-    const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
-    const songsWithNone = [...selectedSongs, noneOption];
-    
-    return {
-      type: 'poll',
-      songs: songsWithNone,
-      votingOpen,
-      state: votingOpen ? 'voting' : 'prepared'
-    };
-  }
-
-  preparePollRound() {
-    if (this.songs.length < 10) {
-      return { error: 'Servono almeno 10 brani per creare il sondaggio.' };
-    }
-
-    const roundData = this.preparePoll(false);
-    this.currentRound = {
-      id: Date.now(),
-      category: 'poll',
-      ...roundData,
-      votes: []
-    };
-
-    this.emitRoundUpdate();
-    return this.getRoundSnapshot();
-  }
-
-  openPollVoting() {
-    if (!this.currentRound || this.currentRound.type !== 'poll') return null;
-
-    this.currentRound.votingOpen = true;
-    this.currentRound.state = 'voting';
-    const snapshot = this.getRoundSnapshot();
-    this.emit('round:started', snapshot);
-    this.emitRoundUpdate();
-    return snapshot;
-  }
-
-  prepareDuet() {
-    if (this.users.length < 2) {
-      return { type: 'duet', error: 'Servono almeno 2 utenti' };
-    }
-
-    const commonVotes = this.findCommonVotes();
-    
-    let user1, user2, song;
-    
-    if (commonVotes.length > 0) {
-      const match = commonVotes[0];
-      user1 = this.users.find(u => u.id === match.user1Id);
-      user2 = this.users.find(u => u.id === match.user2Id);
-      song = this.songs.find(s => s.id === match.songId);
-    } else {
-      const shuffled = [...this.users].sort(() => Math.random() - 0.5);
-      user1 = shuffled[0];
-      user2 = shuffled[1];
-      song = this.songs[Math.floor(Math.random() * this.songs.length)];
-    }
-
-    return {
-      type: 'duet',
-      users: [user1, user2],
-      song,
-      animation: 'wheel'
-    };
-  }
-
-  prepareWheel() {
-    const song = this.songs[Math.floor(Math.random() * this.songs.length)];
-    return {
-      type: 'wheel',
-      song,
-      animation: 'wheel'
-    };
-  }
-
-  prepareFreeChoice() {
-    if (this.users.length === 0) {
-      return { type: 'free_choice', error: 'Nessun utente registrato' };
-    }
-    
-    const user = this.users[Math.floor(Math.random() * this.users.length)];
-    return {
-      type: 'free_choice',
-      user,
-      animation: 'wheel'
-    };
-  }
-
-  prepareYear(year = 1980) {
-    const songsFromYear = this.songs.filter(s => s.year === year);
-    const selectedSongs = songsFromYear.length > 0 
-      ? songsFromYear.slice(0, 10)
-      : this.songs.slice(0, 10);
-
-    return {
-      type: 'year',
-      year,
-      songs: selectedSongs,
-      votingOpen: true
-    };
-  }
-
-  preparePassMic() {
-    if (this.users.length < 2) {
-      return { type: 'pass_mic', error: 'Servono almeno 2 utenti' };
-    }
-
-    const song = this.songs[Math.floor(Math.random() * this.songs.length)];
-    const shuffled = [...this.users].sort(() => Math.random() - 0.5);
-    const participants = shuffled.slice(0, Math.min(3, this.users.length));
-
-    return {
-      type: 'pass_mic',
-      song,
-      participants,
-      currentUserIndex: 0,
-      animation: 'wheel'
-    };
-  }
-
-  findCommonVotes() {
-    const commonVotes = [];
-    
-    for (let i = 0; i < this.votes.length; i++) {
-      for (let j = i + 1; j < this.votes.length; j++) {
-        if (this.votes[i].songId === this.votes[j].songId) {
-          commonVotes.push({
-            user1Id: this.votes[i].userId,
-            user2Id: this.votes[j].userId,
-            songId: this.votes[i].songId
-          });
-        }
-      }
-    }
-    
-    return commonVotes;
-  }
-
-  closePollRound() {
-    if (!this.currentRound || this.currentRound.type !== 'poll') return null;
-
-    this.currentRound.votingOpen = false;
-    this.currentRound.state = 'ended';
-    const snapshot = this.getRoundSnapshot();
-    const results = this.calculatePollResults(snapshot);
-
-    this.rounds.push({ ...snapshot, results });
-    this.emitRoundUpdate();
-    this.emit('round:ended', results);
-    this.currentRound = null;
-    return results;
-  }
-
-  vote(userId, songId) {
-    if (!this.currentRound || !this.currentRound.votingOpen) return;
-
-    const vote = { userId, songId, roundId: this.currentRound.id };
-    this.votes.push(vote);
-    this.currentRound.votes.push(vote);
-    
-    this.emitRoundUpdate();
-    this.emit('vote:registered', vote);
-  }
-
-  endRound() {
-    if (!this.currentRound) return;
-
-    if (this.currentRound.type === 'poll') {
-      return this.closePollRound();
-    }
-
-    const snapshot = this.getRoundSnapshot();
-    let results;
-    
-    if (snapshot?.votingOpen) {
-      results = this.calculatePollResults(snapshot);
-    } else {
-      results = { winner: snapshot };
-    }
-
-    this.rounds.push({ ...snapshot, results });
-    this.emitRoundUpdate();
-    this.emit('round:ended', results);
-    this.currentRound = null;
-    return results;
-  }
-
-  calculatePollResults(round = this.currentRound) {
-    if (!round) return { winner: null, stats: [] };
-    const voteCounts = {};
-    const songsList = round.songs || [];
-    
-    round.votes?.forEach(vote => {
-      voteCounts[vote.songId] = (voteCounts[vote.songId] || 0) + 1;
-    });
-
-    songsList.forEach(song => {
-      if (!voteCounts[song.id]) {
-        voteCounts[song.id] = 0;
-      }
-    });
-
-    const sorted = Object.entries(voteCounts)
-      .map(([songId, count]) => ({ songId: parseInt(songId), count }))
-      .sort((a, b) => {
-        if (b.count !== a.count) return b.count - a.count;
-        const songA = songsList.find(s => s.id === a.songId);
-        const songB = songsList.find(s => s.id === b.songId);
-        return (songA?.title || '').localeCompare(songB?.title || '');
-      });
-
-    const threshold = 3;
-    const qualified = sorted.filter(s => s.count >= threshold);
-    const winner = qualified.length > 0 ? qualified[0] : sorted[0];
-
-    return {
-      winner: songsList.find(s => s.id === winner?.songId),
-      stats: sorted.map(s => ({
-        song: songsList.find(song => song.id === s.songId),
-        votes: s.count
-      }))
-    };
-  }
-}
-
-const backend = new MockBackend();
 
 // ============================================================================
 // COMPONENTI UI
@@ -852,65 +439,89 @@ export default function KaraokeApp() {
   const [users, setUsers] = useState([]);
   const [currentRound, setCurrentRound] = useState(null);
   const [roundResults, setRoundResults] = useState(null);
-  const [songLibrary, setSongLibrary] = useState(backend.songs);
-  const [libraryPreview, setLibraryPreview] = useState(backend.songs.slice(0, 10));
+  const [songLibrary, setSongLibrary] = useState([]);
+  const [libraryPreview, setLibraryPreview] = useState([]);
   const [libraryErrors, setLibraryErrors] = useState([]);
   const [importMessage, setImportMessage] = useState('');
   const [roundMessage, setRoundMessage] = useState('');
   const [votesReceived, setVotesReceived] = useState(0);
+  const [socketConnected, setSocketConnected] = useState(false);
   const fileInputRef = useRef(null);
+  const socketRef = useRef(null);
 
   useEffect(() => {
-    const unsubscribers = [];
+    const url = typeof window !== 'undefined'
+      ? `${window.location.protocol}//${window.location.hostname}:4000`
+      : 'http://localhost:4000';
 
-    unsubscribers.push(backend.on('user:registered', (user) => {
+    const socket = io(url, { transports: ['websocket'] });
+    socketRef.current = socket;
+
+    socket.on('connect', () => setSocketConnected(true));
+    socket.on('disconnect', () => setSocketConnected(false));
+
+    socket.on('state:init', (state) => {
+      setSongLibrary(state?.songs || []);
+      setLibraryPreview((state?.songs || []).slice(0, 10));
+      setUsers(state?.users || []);
+      setCurrentRound(state?.currentRound || null);
+      setVotesReceived(state?.currentRound?.votes?.length || 0);
+    });
+
+    socket.on('songs:updated', (songs) => {
+      setSongLibrary(songs || []);
+      setLibraryPreview((songs || []).slice(0, 10));
+      setRoundMessage('');
+    });
+
+    socket.on('user:registered', (user) => {
       setUsers(prev => [...prev, user]);
-    }));
+    });
 
-    unsubscribers.push(backend.on('user:removed', (userId) => {
+    socket.on('user:removed', (userId) => {
       setUsers(prev => prev.filter(u => u.id !== userId));
-      setVotesReceived(prev => {
-        if (!currentRound?.votes) return prev;
-        return currentRound.votes.filter(v => v.userId !== userId).length;
+      setCurrentRound(prev => {
+        if (!prev?.votes) return prev;
+        return { ...prev, votes: prev.votes.filter(v => v.userId !== userId) };
       });
-    }));
+      setVotesReceived(prev => Math.max(0, prev - 1));
+    });
 
-    unsubscribers.push(backend.on('songs:updated', (songs) => {
-      setSongLibrary(songs);
-      setLibraryPreview(songs.slice(0, 10));
-    }));
-
-    unsubscribers.push(backend.on('round:started', (round) => {
+    socket.on('round:started', (round) => {
       setCurrentRound(round);
       setRoundResults(null);
       setVotesReceived(round?.votes?.length || 0);
       setRoundMessage('');
-    }));
+    });
 
-    unsubscribers.push(backend.on('round:updated', (round) => {
+    socket.on('round:updated', (round) => {
       setCurrentRound(round);
       setVotesReceived(round?.votes?.length || 0);
-    }));
+    });
 
-    unsubscribers.push(backend.on('round:ended', (results) => {
+    socket.on('round:error', (msg) => {
+      setRoundMessage(msg || 'Errore nella gestione del round.');
+    });
+
+    socket.on('round:ended', (results) => {
       setRoundResults(results);
       setCurrentRound(null);
       setVotesReceived(0);
       setRoundMessage('Risultati pronti.');
       setView('display');
-    }));
+    });
 
-    unsubscribers.push(backend.on('round:reset', () => {
+    socket.on('round:reset', () => {
       setCurrentRound(null);
       setRoundResults(null);
       setVotesReceived(0);
       setRoundMessage('');
-    }));
+    });
 
     return () => {
-      unsubscribers.forEach(unsub => unsub && unsub());
+      socket.disconnect();
     };
-  }, [currentRound]);
+  }, []);
 
   useEffect(() => {
     const votingActive = currentRound?.votingOpen;
@@ -924,13 +535,15 @@ export default function KaraokeApp() {
   }, [currentRound, currentUser, view]);
 
   const handleUserJoin = (name, photo) => {
-    const user = backend.registerUser(name, photo);
-    setCurrentUser(user);
-    setView('waiting');
+    if (!socketRef.current) return;
+    socketRef.current.emit('user:register', { name, photo }, (user) => {
+      setCurrentUser(user);
+      setView('waiting');
+    });
   };
 
   const handleRemoveUser = (id) => {
-    backend.removeUser(id);
+    socketRef.current?.emit('user:remove', id);
   };
 
   const handleSongFileChange = (event) => {
@@ -944,7 +557,7 @@ export default function KaraokeApp() {
 
       setLibraryErrors(errors);
       if (songs.length > 0) {
-        backend.replaceSongs(songs);
+        socketRef.current?.emit('songs:replace', songs);
         setSongLibrary(songs);
         setLibraryPreview(songs.slice(0, 10));
         setImportMessage(`Caricati ${songs.length} brani dalla libreria CSV.`);
@@ -969,13 +582,7 @@ export default function KaraokeApp() {
       return;
     }
 
-    const prepared = backend.preparePollRound();
-    if (prepared?.error) {
-      setRoundMessage(prepared.error);
-      return;
-    }
-
-    setCurrentRound(prepared);
+    socketRef.current?.emit('round:preparePoll');
     setRoundResults(null);
     setVotesReceived(0);
     setRoundMessage('Round preparato con 10 brani casuali.');
@@ -986,20 +593,18 @@ export default function KaraokeApp() {
       setRoundMessage('Prepara prima un round sondaggio.');
       return;
     }
-    backend.openPollVoting();
+    socketRef.current?.emit('round:openVoting');
     setRoundMessage('Votazione aperta: i partecipanti possono votare.');
-    setCurrentRound(backend.getRoundSnapshot());
   };
 
   const handleCloseVoting = () => {
     if (!currentRound) return;
-    backend.closePollRound();
+    socketRef.current?.emit('round:close');
     setRoundMessage('Votazione chiusa, calcolo risultati...');
-    setCurrentRound(null);
   };
 
   const handleResetRound = () => {
-    backend.resetRound();
+    socketRef.current?.emit('round:reset');
     setRoundResults(null);
     setRoundMessage('Round azzerato.');
   };
@@ -1009,21 +614,18 @@ export default function KaraokeApp() {
       handlePreparePoll();
       return;
     }
-    backend.startRound(category);
-    setView('display');
+    setRoundMessage('Modalità extra non disponibili con il server socket in questa versione.');
   };
 
   const handleVote = (songId) => {
     if (currentUser && currentRound) {
-      backend.vote(currentUser.id, songId);
+      socketRef.current?.emit('round:vote', { userId: currentUser.id, songId });
     }
   };
 
   const handleEndRound = () => {
     if (currentRound?.type === 'poll') {
       handleCloseVoting();
-    } else {
-      backend.endRound();
     }
   };
 

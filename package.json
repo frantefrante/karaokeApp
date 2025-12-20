@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "server": "node server.js"
   },
   "dependencies": {
     "lucide-react": "^0.562.0",
     "qrcode.react": "^4.2.0",
+    "socket.io-client": "^4.8.1",
+    "socket.io": "^4.8.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
