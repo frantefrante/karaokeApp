@@ -1,5 +1,114 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
+import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye } from 'lucide-react';
+
+const STORAGE_KEY = 'karaoke_songs';
+// Escape space in SSID for better QR compatibility
+const WIFI_QR_VALUE = 'WIFI:T:WPA;S:FASTWEB-EUK8T4\\ 5Hz;P:BCAXTYDCD9;;';
+
+const parseCSVLine = (line, delimiter) => {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === delimiter && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.length > 0 || line.endsWith(delimiter)) {
+    values.push(current.trim());
+  }
+
+  return values;
+};
+
+const detectDelimiter = (line) => {
+  const commas = (line.match(/,/g) || []).length;
+  const semicolons = (line.match(/;/g) || []).length;
+
+  if (semicolons > 0 && commas > 0) return ';';
+  if (semicolons > 0) return ';';
+  if (commas > 0) return ',';
+  return ',';
+};
+
+const parseSongsFromCSV = (text) => {
+  const rows = text.split(/\r?\n/).filter((row) => row.trim().length > 0);
+  if (rows.length === 0) {
+    return { songs: [], errors: ['Il file CSV è vuoto.'] };
+  }
+
+  const delimiter = detectDelimiter(rows[0]);
+  const header = parseCSVLine(rows[0], delimiter).map((h) => h.toLowerCase());
+  const titleIndex = header.indexOf('title');
+  const artistIndex = header.indexOf('artist');
+  const yearIndex = header.indexOf('year');
+
+  if (titleIndex === -1) {
+    return { songs: [], errors: ['Colonna "title" mancante nell\'header.'] };
+  }
+
+  const songs = [];
+  const errors = [];
+
+  rows.slice(1).forEach((row, rowIdx) => {
+    const cols = parseCSVLine(row, delimiter);
+    const title = cols[titleIndex]?.trim();
+    const artist = cols[artistIndex]?.trim() || 'Artista sconosciuto';
+    const yearRaw = yearIndex !== -1 ? cols[yearIndex]?.trim() : '';
+
+    if (!title) {
+      errors.push(`Riga ${rowIdx + 2}: titolo mancante, riga scartata.`);
+      return;
+    }
+
+    const year = yearRaw ? parseInt(yearRaw, 10) : null;
+    songs.push({
+      id: songs.length + 1,
+      title,
+      artist,
+      year: Number.isFinite(year) ? year : null
+    });
+  });
+
+  return { songs, errors };
+};
+
+const loadSongsFromStorage = () => {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return parsed;
+  } catch (err) {
+    console.error('Errore lettura storage', err);
+    return null;
+  }
+};
+
+const saveSongsToStorage = (songs) => {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
+  } catch (err) {
+    console.error('Errore salvataggio storage', err);
+  }
+};
 
 // ============================================================================
 // SIMULAZIONE BACKEND (in produzione sostituire con Socket.io reale)
@@ -8,11 +117,16 @@ import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic } from 'lucide-
 class MockBackend {
   constructor() {
     this.users = [];
-    this.songs = this.generateMockSongs();
+    const storedSongs = loadSongsFromStorage();
+    this.songs = storedSongs && storedSongs.length > 0 ? storedSongs : this.generateMockSongs();
     this.rounds = [];
     this.votes = [];
     this.currentRound = null;
     this.listeners = [];
+
+    if (!storedSongs || storedSongs.length === 0) {
+      saveSongsToStorage(this.songs);
+    }
   }
 
   generateMockSongs() {
@@ -43,13 +157,60 @@ class MockBackend {
   }
 
   on(event, callback) {
-    this.listeners.push({ event, callback });
+    const listener = { event, callback };
+    this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter(l => l !== listener);
+    };
   }
 
   emit(event, data) {
     this.listeners
       .filter(l => l.event === event)
       .forEach(l => l.callback(data));
+  }
+
+  getRoundSnapshot() {
+    if (!this.currentRound) return null;
+    return {
+      ...this.currentRound,
+      songs: this.currentRound.songs ? [...this.currentRound.songs] : [],
+      votes: this.currentRound.votes ? [...this.currentRound.votes] : []
+    };
+  }
+
+  emitRoundUpdate() {
+    const snapshot = this.getRoundSnapshot();
+    if (snapshot) {
+      this.emit('round:updated', snapshot);
+    }
+  }
+
+  replaceSongs(songs) {
+    this.songs = songs;
+    saveSongsToStorage(songs);
+    this.currentRound = null;
+    this.votes = [];
+    this.emit('songs:updated', this.songs);
+    this.emit('round:reset');
+  }
+
+  resetRound() {
+    this.currentRound = null;
+    this.votes = [];
+    this.emit('round:reset');
+  }
+
+  removeUser(id) {
+    const user = this.users.find(u => u.id === id);
+    if (!user) return;
+    this.users = this.users.filter(u => u.id !== id);
+    this.votes = this.votes.filter(v => v.userId !== id);
+    if (this.currentRound?.votes) {
+      this.currentRound.votes = this.currentRound.votes.filter(v => v.userId !== id);
+    }
+    this.emitRoundUpdate();
+    this.emit('user:removed', id);
   }
 
   registerUser(name, photo) {
@@ -68,9 +229,11 @@ class MockBackend {
     let roundData;
     
     switch(category) {
-      case 'poll':
-        roundData = this.preparePoll();
-        break;
+      case 'poll': {
+        const prepared = this.preparePollRound();
+        if (prepared?.error) return prepared;
+        return this.openPollVoting();
+      }
       case 'duet':
         roundData = this.prepareDuet();
         break;
@@ -93,23 +256,59 @@ class MockBackend {
     this.currentRound = {
       id: Date.now(),
       category,
+      state: roundData?.votingOpen ? 'voting' : 'in_progress',
       ...roundData,
       votes: []
     };
 
-    this.emit('round:started', this.currentRound);
+    const snapshot = this.getRoundSnapshot();
+    this.emit('round:started', snapshot);
+    this.emitRoundUpdate();
+    return snapshot;
   }
 
-  preparePoll() {
+  preparePoll(votingOpen = true) {
     const selectedSongs = [...this.songs]
       .sort(() => Math.random() - 0.5)
       .slice(0, 10);
+
+    const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
+    const songsWithNone = [...selectedSongs, noneOption];
     
     return {
       type: 'poll',
-      songs: selectedSongs,
-      votingOpen: true
+      songs: songsWithNone,
+      votingOpen,
+      state: votingOpen ? 'voting' : 'prepared'
     };
+  }
+
+  preparePollRound() {
+    if (this.songs.length < 10) {
+      return { error: 'Servono almeno 10 brani per creare il sondaggio.' };
+    }
+
+    const roundData = this.preparePoll(false);
+    this.currentRound = {
+      id: Date.now(),
+      category: 'poll',
+      ...roundData,
+      votes: []
+    };
+
+    this.emitRoundUpdate();
+    return this.getRoundSnapshot();
+  }
+
+  openPollVoting() {
+    if (!this.currentRound || this.currentRound.type !== 'poll') return null;
+
+    this.currentRound.votingOpen = true;
+    this.currentRound.state = 'voting';
+    const snapshot = this.getRoundSnapshot();
+    this.emit('round:started', snapshot);
+    this.emitRoundUpdate();
+    return snapshot;
   }
 
   prepareDuet() {
@@ -213,6 +412,21 @@ class MockBackend {
     return commonVotes;
   }
 
+  closePollRound() {
+    if (!this.currentRound || this.currentRound.type !== 'poll') return null;
+
+    this.currentRound.votingOpen = false;
+    this.currentRound.state = 'ended';
+    const snapshot = this.getRoundSnapshot();
+    const results = this.calculatePollResults(snapshot);
+
+    this.rounds.push({ ...snapshot, results });
+    this.emitRoundUpdate();
+    this.emit('round:ended', results);
+    this.currentRound = null;
+    return results;
+  }
+
   vote(userId, songId) {
     if (!this.currentRound || !this.currentRound.votingOpen) return;
 
@@ -220,44 +434,65 @@ class MockBackend {
     this.votes.push(vote);
     this.currentRound.votes.push(vote);
     
+    this.emitRoundUpdate();
     this.emit('vote:registered', vote);
   }
 
   endRound() {
     if (!this.currentRound) return;
 
-    let results;
-    
-    if (this.currentRound.votingOpen) {
-      results = this.calculatePollResults();
-    } else {
-      results = { winner: this.currentRound };
+    if (this.currentRound.type === 'poll') {
+      return this.closePollRound();
     }
 
-    this.rounds.push({ ...this.currentRound, results });
+    const snapshot = this.getRoundSnapshot();
+    let results;
+    
+    if (snapshot?.votingOpen) {
+      results = this.calculatePollResults(snapshot);
+    } else {
+      results = { winner: snapshot };
+    }
+
+    this.rounds.push({ ...snapshot, results });
+    this.emitRoundUpdate();
     this.emit('round:ended', results);
     this.currentRound = null;
+    return results;
   }
 
-  calculatePollResults() {
+  calculatePollResults(round = this.currentRound) {
+    if (!round) return { winner: null, stats: [] };
     const voteCounts = {};
+    const songsList = round.songs || [];
     
-    this.currentRound.votes.forEach(vote => {
+    round.votes?.forEach(vote => {
       voteCounts[vote.songId] = (voteCounts[vote.songId] || 0) + 1;
+    });
+
+    songsList.forEach(song => {
+      if (!voteCounts[song.id]) {
+        voteCounts[song.id] = 0;
+      }
     });
 
     const sorted = Object.entries(voteCounts)
       .map(([songId, count]) => ({ songId: parseInt(songId), count }))
-      .sort((a, b) => b.count - a.count);
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        const songA = songsList.find(s => s.id === a.songId);
+        const songB = songsList.find(s => s.id === b.songId);
+        return (songA?.title || '').localeCompare(songB?.title || '');
+      });
 
     const threshold = 3;
     const qualified = sorted.filter(s => s.count >= threshold);
     const winner = qualified.length > 0 ? qualified[0] : sorted[0];
 
     return {
-      winner: this.songs.find(s => s.id === winner?.songId),
+      winner: songsList.find(s => s.id === winner?.songId),
       stats: sorted.map(s => ({
-        song: this.songs.find(song => song.id === s.songId),
+        song: songsList.find(song => song.id === s.songId),
         votes: s.count
       }))
     };
@@ -283,10 +518,13 @@ function PhotoCapture({ onCapture }) {
       setStream(mediaStream);
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play();
+        };
       }
     } catch (err) {
       console.error('Errore accesso camera:', err);
-      alert('Impossibile accedere alla camera. Per questa demo, useremo un\'immagine placeholder.');
+      alert('Impossibile accedere alla camera. Apri l\'app da https:// o http://localhost per abilitare la camera. Useremo un\'immagine placeholder.');
       onCapture('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%236366f1" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" font-size="80" text-anchor="middle" dy=".3em" fill="white"%3E👤%3C/text%3E%3C/svg%3E');
       setCaptured(true);
     }
@@ -341,6 +579,7 @@ function PhotoCapture({ onCapture }) {
             ref={videoRef}
             autoPlay
             playsInline
+            muted
             className="w-full max-w-md mx-auto rounded-lg mb-4"
           />
           <button
@@ -474,7 +713,9 @@ function VotingInterface({ songs, onVote }) {
             } disabled:opacity-50`}
           >
             <div className="font-bold text-lg">{song.title}</div>
-            <div className="text-sm opacity-75">{song.artist} • {song.year}</div>
+            <div className="text-sm opacity-75">
+              {song.artist}{song.artist ? ' • ' : ''}{song.year ?? ''}
+            </div>
           </button>
         ))}
       </div>
@@ -483,6 +724,66 @@ function VotingInterface({ songs, onVote }) {
           ✓ Voto registrato per "{selectedSong.title}"!
         </div>
       )}
+    </div>
+  );
+}
+
+function ResultList({ stats, compact = false }) {
+  const maxVotes = Math.max(0, ...stats.map(s => s.votes));
+  const minVisible = 4;
+
+  return (
+    <div className="space-y-3">
+      {stats.map((stat, i) => {
+        const percent = maxVotes > 0 ? (stat.votes / maxVotes) * 100 : 0;
+        const barWidth = stat.votes > 0 ? Math.max(percent, minVisible) : 0;
+        return (
+          <div
+            key={`${stat.song.id}-${i}`}
+            className={`p-3 bg-gray-50 rounded-lg border ${compact ? '' : 'flex flex-col gap-1'}`}
+          >
+            <div className="flex items-center justify-between text-sm">
+              <div className="font-bold text-gray-800">{stat.song.title}</div>
+              <div className="flex items-center gap-1 text-gray-700">
+                <span className="text-lg font-semibold text-blue-700">{stat.votes}</span>
+                <span className="text-xs">voti</span>
+              </div>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+              <div
+                className="bg-gradient-to-r from-blue-500 to-purple-500 h-full transition-all duration-500 ease-out"
+                style={{ width: `${barWidth}%` }}
+              />
+            </div>
+            {!compact && (
+              <div className="text-xs text-gray-500">{stat.song.artist}</div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function QrCode({ value, label, sublabel }) {
+  return (
+    <div className="flex flex-col items-center p-4 bg-white rounded-xl shadow border">
+      <QRCodeCanvas
+        value={value}
+        size={260}
+        level="H"
+        includeMargin
+      />
+      <div className="text-center mt-3">
+        <p className="font-bold text-gray-800">{label}</p>
+        {sublabel && <p className="text-sm text-gray-600">{sublabel}</p>}
+        <p className="mt-2 text-xs text-gray-500 break-all">{value}</p>
+        {label === 'Wi‑Fi' && (
+          <p className="mt-1 text-[11px] text-gray-500">
+            Se non funziona via QR, inserisci SSID e password manualmente.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -551,26 +852,74 @@ export default function KaraokeApp() {
   const [users, setUsers] = useState([]);
   const [currentRound, setCurrentRound] = useState(null);
   const [roundResults, setRoundResults] = useState(null);
+  const [songLibrary, setSongLibrary] = useState(backend.songs);
+  const [libraryPreview, setLibraryPreview] = useState(backend.songs.slice(0, 10));
+  const [libraryErrors, setLibraryErrors] = useState([]);
+  const [importMessage, setImportMessage] = useState('');
+  const [roundMessage, setRoundMessage] = useState('');
+  const [votesReceived, setVotesReceived] = useState(0);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
-    backend.on('user:registered', (user) => {
-      setUsers(prev => [...prev, user]);
-    });
+    const unsubscribers = [];
 
-    backend.on('round:started', (round) => {
+    unsubscribers.push(backend.on('user:registered', (user) => {
+      setUsers(prev => [...prev, user]);
+    }));
+
+    unsubscribers.push(backend.on('user:removed', (userId) => {
+      setUsers(prev => prev.filter(u => u.id !== userId));
+      setVotesReceived(prev => {
+        if (!currentRound?.votes) return prev;
+        return currentRound.votes.filter(v => v.userId !== userId).length;
+      });
+    }));
+
+    unsubscribers.push(backend.on('songs:updated', (songs) => {
+      setSongLibrary(songs);
+      setLibraryPreview(songs.slice(0, 10));
+    }));
+
+    unsubscribers.push(backend.on('round:started', (round) => {
       setCurrentRound(round);
       setRoundResults(null);
-    });
+      setVotesReceived(round?.votes?.length || 0);
+      setRoundMessage('');
+    }));
 
-    backend.on('round:ended', (results) => {
+    unsubscribers.push(backend.on('round:updated', (round) => {
+      setCurrentRound(round);
+      setVotesReceived(round?.votes?.length || 0);
+    }));
+
+    unsubscribers.push(backend.on('round:ended', (results) => {
       setRoundResults(results);
       setCurrentRound(null);
-    });
-  }, []);
+      setVotesReceived(0);
+      setRoundMessage('Risultati pronti.');
+      setView('display');
+    }));
+
+    unsubscribers.push(backend.on('round:reset', () => {
+      setCurrentRound(null);
+      setRoundResults(null);
+      setVotesReceived(0);
+      setRoundMessage('');
+    }));
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub && unsub());
+    };
+  }, [currentRound]);
 
   useEffect(() => {
-    if (currentRound && currentUser && view === 'waiting') {
+    const votingActive = currentRound?.votingOpen;
+    const isAdminView = view === 'admin' || view === 'display';
+    if (votingActive && currentUser && !isAdminView && view !== 'voting') {
       setView('voting');
+    }
+    if ((!currentRound || !currentRound.votingOpen) && view === 'voting') {
+      setView('waiting');
     }
   }, [currentRound, currentUser, view]);
 
@@ -580,7 +929,86 @@ export default function KaraokeApp() {
     setView('waiting');
   };
 
+  const handleRemoveUser = (id) => {
+    backend.removeUser(id);
+  };
+
+  const handleSongFileChange = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      const { songs, errors } = parseSongsFromCSV(text);
+
+      setLibraryErrors(errors);
+      if (songs.length > 0) {
+        backend.replaceSongs(songs);
+        setSongLibrary(songs);
+        setLibraryPreview(songs.slice(0, 10));
+        setImportMessage(`Caricati ${songs.length} brani dalla libreria CSV.`);
+      } else {
+        setImportMessage('');
+      }
+    };
+    reader.onerror = () => {
+      setLibraryErrors(['Impossibile leggere il file CSV.']);
+    };
+    reader.readAsText(file, 'UTF-8');
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handlePreparePoll = () => {
+    setRoundMessage('');
+    if (songLibrary.length < 10) {
+      setRoundMessage('Servono almeno 10 brani in libreria per preparare un sondaggio.');
+      return;
+    }
+
+    const prepared = backend.preparePollRound();
+    if (prepared?.error) {
+      setRoundMessage(prepared.error);
+      return;
+    }
+
+    setCurrentRound(prepared);
+    setRoundResults(null);
+    setVotesReceived(0);
+    setRoundMessage('Round preparato con 10 brani casuali.');
+  };
+
+  const handleOpenVoting = () => {
+    if (!currentRound || currentRound.type !== 'poll') {
+      setRoundMessage('Prepara prima un round sondaggio.');
+      return;
+    }
+    backend.openPollVoting();
+    setRoundMessage('Votazione aperta: i partecipanti possono votare.');
+    setCurrentRound(backend.getRoundSnapshot());
+  };
+
+  const handleCloseVoting = () => {
+    if (!currentRound) return;
+    backend.closePollRound();
+    setRoundMessage('Votazione chiusa, calcolo risultati...');
+    setCurrentRound(null);
+  };
+
+  const handleResetRound = () => {
+    backend.resetRound();
+    setRoundResults(null);
+    setRoundMessage('Round azzerato.');
+  };
+
   const handleStartRound = (category) => {
+    if (category === 'poll') {
+      handlePreparePoll();
+      return;
+    }
     backend.startRound(category);
     setView('display');
   };
@@ -592,10 +1020,16 @@ export default function KaraokeApp() {
   };
 
   const handleEndRound = () => {
-    backend.endRound();
+    if (currentRound?.type === 'poll') {
+      handleCloseVoting();
+    } else {
+      backend.endRound();
+    }
   };
 
   if (view === 'home') {
+    const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'http://192.168.x.x:5173';
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
@@ -603,6 +1037,19 @@ export default function KaraokeApp() {
             <Mic className="w-20 h-20 mx-auto mb-4 text-purple-600" />
             <h1 className="text-4xl font-bold text-gray-800 mb-2">Karaoke Night</h1>
             <p className="text-gray-600">Sistema Interattivo per Serate Musicali</p>
+          </div>
+
+          <div className="space-y-3 mb-6">
+            <QrCode
+              value={siteUrl}
+              label="Accedi al sito"
+              sublabel="Inquadra per aprire la webapp"
+            />
+            <QrCode
+              value={WIFI_QR_VALUE}
+              label="Wi‑Fi"
+              sublabel="Inquadra per connetterti (WPA2)"
+            />
           </div>
 
           <div className="space-y-4">
@@ -657,11 +1104,26 @@ export default function KaraokeApp() {
             <Music className="w-16 h-16 text-green-500 mx-auto" />
           </div>
 
+          {currentRound?.votingOpen && (
+            <button
+              onClick={() => setView('voting')}
+              className="mt-6 w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700"
+            >
+              Vai al voto
+            </button>
+          )}
+
           <button
             onClick={() => setView('home')}
             className="mt-8 text-gray-600 hover:text-gray-800"
           >
             ← Torna alla Home
+          </button>
+          <button
+            onClick={() => setView('admin')}
+            className="mt-2 text-gray-600 hover:text-gray-800 block mx-auto"
+          >
+            Vai al Pannello Organizzatore
           </button>
         </div>
       </div>
@@ -678,12 +1140,26 @@ export default function KaraokeApp() {
               onVote={handleVote}
             />
           </div>
-          <button
-            onClick={() => setView('waiting')}
-            className="mt-4 text-white hover:text-gray-200 block mx-auto"
-          >
-            ← Indietro
-          </button>
+          <div className="mt-4 flex items-center justify-center gap-4 text-white">
+            <button
+              onClick={() => setView('waiting')}
+              className="hover:text-gray-200"
+            >
+              ← Torna in attesa
+            </button>
+            <button
+              onClick={() => setView('home')}
+              className="hover:text-gray-200"
+            >
+              Vai alla Home
+            </button>
+            <button
+              onClick={() => setView('admin')}
+              className="hover:text-gray-200"
+            >
+              Pannello Organizzatore
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -691,13 +1167,13 @@ export default function KaraokeApp() {
 
   if (view === 'admin') {
     const categories = [
-      { id: 'poll', name: 'Sondaggio Brani', icon: Trophy },
       { id: 'duet', name: 'Duetti', icon: Users },
       { id: 'wheel', name: 'Ruota della Fortuna', icon: Disc },
       { id: 'free_choice', name: 'Scelta Libera', icon: Music },
       { id: 'year', name: 'Categoria per Anno', icon: Calendar },
       { id: 'pass_mic', name: 'Passa il Microfono', icon: Mic }
     ];
+    const pollPrepared = currentRound && currentRound.type === 'poll';
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-800 to-gray-900 p-4">
@@ -707,17 +1183,220 @@ export default function KaraokeApp() {
 
             <div className="mb-8 p-4 bg-blue-50 rounded-lg">
               <p className="text-sm text-gray-600">Utenti connessi: <span className="font-bold">{users.length}</span></p>
+              <div className="flex items-center gap-4 text-sm text-gray-700 mt-1 flex-wrap">
+                <span className="font-semibold">Voti ricevuti: {votesReceived}</span>
+                <span>Libreria brani: {songLibrary.length}</span>
+              </div>
               <div className="flex gap-2 mt-2 flex-wrap">
                 {users.map(user => (
-                  <div key={user.id} className="flex items-center gap-2 bg-white px-3 py-1 rounded-full">
+                  <div key={user.id} className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border">
                     <img src={user.photo} alt={user.name} className="w-6 h-6 rounded-full" />
                     <span className="text-sm">{user.name}</span>
+                    <button
+                      onClick={() => handleRemoveUser(user.id)}
+                      className="text-xs text-red-600 hover:text-red-800"
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>
             </div>
 
-            <h3 className="text-xl font-bold mb-4">Avvia Categoria di Gioco:</h3>
+            <div className="mb-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm uppercase text-gray-500 font-semibold">Libreria brani</p>
+                  <p className="text-2xl font-bold text-gray-800">{songLibrary.length} brani totali</p>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={handleSongFileChange}
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
+                  >
+                    <Upload className="w-5 h-5" />
+                    Carica CSV
+                  </button>
+                </div>
+              </div>
+
+              {importMessage && (
+                <div className="flex items-center gap-2 text-green-800 bg-green-100 border border-green-200 p-3 rounded-lg mb-3">
+                  <CheckCircle className="w-5 h-5" />
+                  <span>{importMessage}</span>
+                </div>
+              )}
+
+              {libraryErrors.length > 0 && (
+                <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-3">
+                  <p className="font-bold mb-1">Errori di parsing:</p>
+                  <ul className="list-disc pl-5 text-sm space-y-1">
+                    {libraryErrors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <p className="text-sm font-semibold text-gray-700 mb-2 mt-4">Anteprima (prime 10 righe)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {libraryPreview.map(song => (
+                  <div key={song.id} className="p-3 bg-white rounded-lg border border-gray-200">
+                    <p className="font-bold">{song.title}</p>
+                    <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                  </div>
+                ))}
+                {libraryPreview.length === 0 && (
+                  <div className="text-sm text-gray-500">Nessun brano disponibile.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="mb-8 p-6 bg-purple-50 rounded-xl border border-purple-200">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-purple-900">Sondaggio Brani</h3>
+                  <p className="text-sm text-gray-700">Prepara 10 brani casuali e gestisci apertura/chiusura.</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs uppercase text-gray-500">Stato</p>
+                  <p className="text-lg font-bold text-purple-900">{pollPrepared ? (currentRound?.state || 'in attesa') : 'Nessun round'}</p>
+                </div>
+              </div>
+
+              {songLibrary.length < 10 && (
+                <div className="flex items-center gap-2 text-yellow-800 bg-yellow-100 border border-yellow-200 p-3 rounded-lg mb-4">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span>Carica almeno 10 brani per preparare il sondaggio.</span>
+                </div>
+              )}
+
+              {roundMessage && (
+                <div className="flex items-center gap-2 text-blue-900 bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4">
+                  <CheckCircle className="w-5 h-5 text-blue-700" />
+                  <span>{roundMessage}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <button
+                  onClick={handlePreparePoll}
+                  disabled={songLibrary.length < 10}
+                  className="p-4 bg-white text-purple-900 rounded-lg border border-purple-200 hover:border-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Prepara round (10 brani casuali)
+                </button>
+                <button
+                  onClick={handleOpenVoting}
+                  disabled={!pollPrepared || currentRound?.votingOpen}
+                  className="p-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Apri votazione
+                </button>
+                <button
+                  onClick={handleCloseVoting}
+                  disabled={!currentRound || !currentRound.votingOpen}
+                  className="p-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Chiudi votazione
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between mt-4 text-sm text-gray-700">
+                <span>Voti ricevuti: {votesReceived}</span>
+                <button
+                  onClick={handleResetRound}
+                  className="flex items-center gap-2 text-purple-800 hover:text-purple-900"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  Reset round
+                </button>
+              </div>
+            </div>
+
+            {currentRound && (
+              <div className="mb-8 bg-white border border-gray-200 rounded-2xl p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <Eye className="w-5 h-5 text-gray-600" />
+                    Anteprima display
+                  </h3>
+                  <button
+                    onClick={() => setView('display')}
+                    className="text-sm text-purple-700 hover:text-purple-900"
+                  >
+                    Apri display a schermo
+                  </button>
+                </div>
+                {!currentRound.votingOpen && currentRound.songs && (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-4">Round preparato, votazione non ancora aperta.</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {currentRound.songs.map(song => (
+                        <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <p className="font-bold">{song.title}</p>
+                          <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {currentRound.votingOpen && currentRound.songs && (
+                  <div>
+                    <p className="text-sm text-gray-600 mb-4">Votazione in corso (anteprima live).</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {currentRound.songs.map(song => {
+                        const votes = (currentRound.votes || []).filter(v => v.songId === song.id).length;
+                        return (
+                          <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                            <p className="font-bold">{song.title}</p>
+                            <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                            <div className="mt-2 flex items-center gap-2">
+                              <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                                <div
+                                  className="bg-purple-500 h-full transition-all"
+                                  style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-semibold text-gray-700">{votes}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {roundResults && (
+              <div className="mb-8 bg-white border border-green-200 rounded-2xl p-6">
+                <h3 className="text-xl font-bold text-green-800 mb-4">Risultati ultimi round</h3>
+                {roundResults.winner && (
+                  <div className="mb-4">
+                    <p className="text-sm uppercase text-gray-500">Vincitore</p>
+                    <p className="text-2xl font-bold text-green-700">{roundResults.winner.title}</p>
+                    <p className="text-sm text-gray-600">{roundResults.winner.artist}</p>
+                  </div>
+                )}
+                {roundResults.stats && <ResultList stats={roundResults.stats} compact />}
+                <button
+                  onClick={() => setRoundResults(null)}
+                  className="mt-4 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Nascondi risultati
+                </button>
+              </div>
+            )}
+
+            <h3 className="text-xl font-bold mb-4">Altre modalità di gioco</h3>
             <div className="grid grid-cols-2 gap-4">
               {categories.map(cat => {
                 const IconComponent = cat.icon;
@@ -734,7 +1413,7 @@ export default function KaraokeApp() {
               })}
             </div>
 
-            {currentRound && (
+            {currentRound && currentRound.type !== 'poll' && (
               <button
                 onClick={handleEndRound}
                 className="mt-6 w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700"
@@ -779,6 +1458,33 @@ export default function KaraokeApp() {
                 {currentRound.type === 'year' && `📅 Brani dell'anno ${currentRound.year}`}
                 {currentRound.type === 'pass_mic' && '🎤 Passa il Microfono'}
               </h2>
+
+              <div className="flex items-center justify-between mb-6 text-sm text-gray-600">
+                <span className="px-3 py-1 bg-gray-100 rounded-full border border-gray-200">
+                  Stato: {currentRound.state || (currentRound.votingOpen ? 'voting' : 'prepared')}
+                </span>
+                {currentRound.songs && (
+                  <span className="font-semibold text-gray-700">
+                    Voti: {currentRound.votes?.length || 0}
+                  </span>
+                )}
+              </div>
+
+              {currentRound.type === 'poll' && !currentRound.votingOpen && currentRound.songs && (
+                <div>
+                  <p className="text-center text-lg mb-6 text-gray-600">
+                    Round preparato, in attesa di apertura della votazione.
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {currentRound.songs.map(song => (
+                      <div key={song.id} className="p-4 bg-gray-50 rounded-lg border">
+                        <p className="font-bold text-lg">{song.title}</p>
+                        <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {currentRound.votingOpen && currentRound.songs && (
                 <div>
@@ -869,20 +1575,7 @@ export default function KaraokeApp() {
               )}
 
               {roundResults.stats && (
-                <div className="mt-8">
-                  <h3 className="text-xl font-bold mb-4">Classifica Completa:</h3>
-                  <div className="space-y-2">
-                    {roundResults.stats.map((stat, i) => (
-                      <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div className="text-left">
-                          <p className="font-bold">{stat.song.title}</p>
-                          <p className="text-sm text-gray-600">{stat.song.artist}</p>
-                        </div>
-                        <div className="text-2xl font-bold text-blue-600">{stat.votes} 🗳️</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <ResultList stats={roundResults.stats} />
               )}
 
               <button
