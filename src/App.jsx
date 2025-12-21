@@ -544,11 +544,9 @@ export default function KaraokeApp() {
       console.error('Errore registerUser supabase', error);
       return null;
     }
-    if (!silent) {
-      setCurrentUser(data);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data));
-      }
+    setCurrentUser(data);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data));
     }
     return data;
   };
@@ -621,7 +619,12 @@ export default function KaraokeApp() {
     const { error } = await supabase
       .from('k_votes')
       .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: songId });
-    if (error) console.error('Errore voto', error);
+    if (error) {
+      console.error('Errore voto', error);
+      setRoundMessage('Errore nel registrare il voto. Controlla la connessione.');
+    } else {
+      setRoundMessage('');
+    }
   };
 
   useEffect(() => {
@@ -715,7 +718,11 @@ export default function KaraokeApp() {
       if (saved && !registeredOnceRef.current) {
         try {
           const parsed = JSON.parse(saved);
-          await registerUserSupabase(parsed.name, parsed.photo, true);
+          const user = await registerUserSupabase(parsed.name, parsed.photo, true);
+          if (user) {
+            registeredOnceRef.current = true;
+            setCurrentUser(user);
+          }
         } catch (err) {
           console.error('Errore nel registrare utente salvato', err);
         }
