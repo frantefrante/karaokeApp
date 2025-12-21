@@ -555,6 +555,12 @@ export default function KaraokeApp() {
     if (!supabase) return;
     const { error } = await supabase.from('k_users').delete().eq('id', id);
     if (error) console.error('Errore removeUser', error);
+    if (currentUser?.id === id) {
+      setCurrentUser(null);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(CURRENT_USER_KEY);
+      }
+    }
   };
 
   const preparePollSupabase = async () => {
@@ -618,7 +624,7 @@ export default function KaraokeApp() {
     if (!supabase || !currentUser || !currentRound?.id) return;
     const { error } = await supabase
       .from('k_votes')
-      .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: songId });
+      .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: String(songId) });
     if (error) {
       console.error('Errore voto', error);
       setRoundMessage('Errore nel registrare il voto. Controlla la connessione.');
@@ -715,19 +721,19 @@ export default function KaraokeApp() {
 
       // auto re-register saved user
       const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(CURRENT_USER_KEY) : null;
-      if (saved && !registeredOnceRef.current) {
-        try {
-          const parsed = JSON.parse(saved);
-          const user = await registerUserSupabase(parsed.name, parsed.photo, true);
-          if (user) {
-            registeredOnceRef.current = true;
-            setCurrentUser(user);
-          }
-        } catch (err) {
-          console.error('Errore nel registrare utente salvato', err);
+    if (saved && !registeredOnceRef.current) {
+      try {
+        const parsed = JSON.parse(saved);
+        const user = await registerUserSupabase(parsed.name, parsed.photo, true);
+        if (user) {
+          registeredOnceRef.current = true;
+          setCurrentUser(user);
         }
+      } catch (err) {
+        console.error('Errore nel registrare utente salvato', err);
       }
-    };
+    }
+  };
 
     init();
 
