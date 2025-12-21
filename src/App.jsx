@@ -749,12 +749,15 @@ export default function KaraokeApp() {
           type: payloadObj.type || r.category || 'poll',
           votingOpen: payloadObj.votingOpen || false,
           songs,
-          votes: []
+          votes: payloadObj.votes || []
         } : null;
-        setCurrentRound(roundObj);
+
         if (roundObj?.state === 'ended' && payloadObj.results) {
           setRoundResults(payloadObj.results);
+          setCurrentRound(null);
           setView('display');
+        } else {
+          setCurrentRound(roundObj);
         }
       })
       .subscribe();
