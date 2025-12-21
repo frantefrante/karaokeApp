@@ -177,71 +177,6 @@ function PhotoCapture({ onCapture }) {
     onCapture(photo);
   };
 
-  const preparePollSupabase = async () => {
-    if (!supabase) return;
-    const pool = [...songLibrary];
-    if (pool.length < 10) {
-      setRoundMessage('Servono almeno 10 brani in libreria per preparare un sondaggio.');
-      return;
-    }
-    const selectedSongs = pool.sort(() => Math.random() - 0.5).slice(0, 10);
-    const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
-    const songs = [...selectedSongs, noneOption];
-    const payload = { songs, votingOpen: false, votes: [] };
-    const { data, error } = await supabase
-      .from('k_rounds')
-      .insert({ category: 'poll', state: 'prepared', payload })
-      .select()
-      .single();
-    if (error) {
-      console.error('Errore preparePoll', error);
-      setRoundMessage('Errore nella preparazione del round.');
-      return;
-    }
-    setCurrentRound({ ...payload, id: data.id, state: 'prepared', category: 'poll' });
-    setRoundResults(null);
-    setVotesReceived(0);
-    setRoundMessage('Round preparato con 10 brani casuali.');
-  };
-
-  const openVotingSupabase = async () => {
-    if (!supabase || !currentRound?.id) return;
-    const payload = currentRound;
-    const { error } = await supabase
-      .from('k_rounds')
-      .update({ state: 'voting', payload: { ...payload, votingOpen: true } })
-      .eq('id', currentRound.id);
-    if (error) console.error('Errore openVoting', error);
-  };
-
-  const closeVotingSupabase = async () => {
-    if (!supabase || !currentRound?.id) return;
-    const { data: votesData, error: voteErr } = await supabase
-      .from('k_votes')
-      .select('*')
-      .eq('round_id', currentRound.id);
-    if (voteErr) console.error('Errore fetch voti', voteErr);
-    const roundWithVotes = { ...currentRound, votes: (votesData || []).map(v => ({ userId: v.user_id, songId: v.song_id })) };
-    const results = computeResults(roundWithVotes);
-    const payload = { ...currentRound, votingOpen: false, votes: roundWithVotes.votes, results };
-    const { error } = await supabase
-      .from('k_rounds')
-      .update({ state: 'ended', payload })
-      .eq('id', currentRound.id);
-    if (error) console.error('Errore closeVoting', error);
-    setRoundResults(results);
-    setCurrentRound(null);
-    setVotesReceived(0);
-  };
-
-  const voteSupabase = async (songId) => {
-    if (!supabase || !currentUser || !currentRound?.id) return;
-    const { error } = await supabase
-      .from('k_votes')
-      .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: songId });
-    if (error) console.error('Errore voto', error);
-  };
-
   useEffect(() => {
     return () => {
       if (stream) {
@@ -622,6 +557,71 @@ export default function KaraokeApp() {
     if (!supabase) return;
     const { error } = await supabase.from('k_users').delete().eq('id', id);
     if (error) console.error('Errore removeUser', error);
+  };
+
+  const preparePollSupabase = async () => {
+    if (!supabase) return;
+    const pool = [...songLibrary];
+    if (pool.length < 10) {
+      setRoundMessage('Servono almeno 10 brani in libreria per preparare un sondaggio.');
+      return;
+    }
+    const selectedSongs = pool.sort(() => Math.random() - 0.5).slice(0, 10);
+    const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
+    const songs = [...selectedSongs, noneOption];
+    const payload = { songs, votingOpen: false, votes: [] };
+    const { data, error } = await supabase
+      .from('k_rounds')
+      .insert({ category: 'poll', state: 'prepared', payload })
+      .select()
+      .single();
+    if (error) {
+      console.error('Errore preparePoll', error);
+      setRoundMessage('Errore nella preparazione del round.');
+      return;
+    }
+    setCurrentRound({ ...payload, id: data.id, state: 'prepared', category: 'poll' });
+    setRoundResults(null);
+    setVotesReceived(0);
+    setRoundMessage('Round preparato con 10 brani casuali.');
+  };
+
+  const openVotingSupabase = async () => {
+    if (!supabase || !currentRound?.id) return;
+    const payload = currentRound;
+    const { error } = await supabase
+      .from('k_rounds')
+      .update({ state: 'voting', payload: { ...payload, votingOpen: true } })
+      .eq('id', currentRound.id);
+    if (error) console.error('Errore openVoting', error);
+  };
+
+  const closeVotingSupabase = async () => {
+    if (!supabase || !currentRound?.id) return;
+    const { data: votesData, error: voteErr } = await supabase
+      .from('k_votes')
+      .select('*')
+      .eq('round_id', currentRound.id);
+    if (voteErr) console.error('Errore fetch voti', voteErr);
+    const roundWithVotes = { ...currentRound, votes: (votesData || []).map(v => ({ userId: v.user_id, songId: v.song_id })) };
+    const results = computeResults(roundWithVotes);
+    const payload = { ...currentRound, votingOpen: false, votes: roundWithVotes.votes, results };
+    const { error } = await supabase
+      .from('k_rounds')
+      .update({ state: 'ended', payload })
+      .eq('id', currentRound.id);
+    if (error) console.error('Errore closeVoting', error);
+    setRoundResults(results);
+    setCurrentRound(null);
+    setVotesReceived(0);
+  };
+
+  const voteSupabase = async (songId) => {
+    if (!supabase || !currentUser || !currentRound?.id) return;
+    const { error } = await supabase
+      .from('k_votes')
+      .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: songId });
+    if (error) console.error('Errore voto', error);
   };
 
   useEffect(() => {
