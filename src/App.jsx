@@ -162,9 +162,14 @@ function PhotoCapture({ onCapture }) {
   };
 
   const capturePhoto = () => {
+    if (!videoRef.current || !videoRef.current.videoWidth) {
+      setError('Attendi un secondo che la camera parta, poi riprova.');
+      setTimeout(() => capturePhoto(), 300);
+      return;
+    }
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = videoRef.current.videoWidth || 640;
+    canvas.height = videoRef.current.videoHeight || 480;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(videoRef.current, 0, 0);
     const photo = canvas.toDataURL('image/jpeg', 0.8);
@@ -535,6 +540,10 @@ export default function KaraokeApp() {
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
+    if (registeredOnceRef.current && currentUser?.id && !silent) {
+      setView('waiting');
+      return currentUser;
+    }
     const { data, error } = await supabase
       .from('k_users')
       .insert({ name, photo })
@@ -547,6 +556,10 @@ export default function KaraokeApp() {
     setCurrentUser(data);
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data));
+    }
+    if (!silent) {
+      registeredOnceRef.current = true;
+      setView('waiting');
     }
     return data;
   };
@@ -741,9 +754,13 @@ export default function KaraokeApp() {
       .channel('users')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'k_users' }, (payload) => {
         if (payload.eventType === 'INSERT') {
-          setUsers(prev => [...prev, payload.new]);
+          setUsers(prev => prev.some(u => u.id === payload.new.id) ? prev : [...prev, payload.new]);
         } else if (payload.eventType === 'DELETE') {
           setUsers(prev => prev.filter(u => u.id !== payload.old.id));
+          if (currentUser?.id === payload.old.id) {
+            setCurrentUser(null);
+            if (typeof localStorage !== 'undefined') localStorage.removeItem(CURRENT_USER_KEY);
+          }
         }
       })
       .subscribe();
@@ -794,15 +811,19 @@ export default function KaraokeApp() {
   }, [currentRound, currentUser, view]);
 
   const handleUserJoin = (name, photo) => {
-    if (backendMode === 'supabase') {
-      registerUserSupabase(name, photo);
-      registeredOnceRef.current = true;
+    if (currentUser?.id) {
       setView('waiting');
+      return;
+    }
+    if (backendMode === 'supabase') {
+      registeredOnceRef.current = true;
+      registerUserSupabase(name, photo);
     } else {
       const user = { id: Date.now(), name, photo, joinedAt: new Date() };
       setUsers(prev => [...prev, user]);
       setCurrentUser(user);
       if (typeof localStorage !== 'undefined') localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+      registeredOnceRef.current = true;
       setView('waiting');
     }
   };
