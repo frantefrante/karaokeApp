@@ -1,10 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
-import { io } from 'socket.io-client';
+import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye } from 'lucide-react';
 
 const STORAGE_KEY = 'karaoke_songs';
 const CURRENT_USER_KEY = 'karaoke_current_user';
+
+const computeResults = (round) => {
+  if (!round) return { winner: null, stats: [] };
+  const voteCounts = {};
+  const songsList = round.songs || [];
+  (round.votes || []).forEach(v => {
+    voteCounts[v.songId] = (voteCounts[v.songId] || 0) + 1;
+  });
+  songsList.forEach(song => {
+    if (!voteCounts[song.id]) voteCounts[song.id] = 0;
+  });
+  const sorted = Object.entries(voteCounts)
+    .map(([songId, count]) => ({ songId: parseInt(songId, 10), count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      const songA = songsList.find(s => s.id === a.songId);
+      const songB = songsList.find(s => s.id === b.songId);
+      return (songA?.title || '').localeCompare(songB?.title || '');
+    });
+  const threshold = 3;
+  const qualified = sorted.filter(s => s.count >= threshold);
+  const winner = qualified.length > 0 ? qualified[0] : sorted[0];
+  return {
+    winner: songsList.find(s => s.id === winner?.songId) || null,
+    stats: sorted.map(s => ({
+      song: songsList.find(song => song.id === s.songId),
+      votes: s.count
+    }))
+  };
+};
 // Escape space in SSID for better QR compatibility
 const WIFI_QR_VALUE = 'WIFI:T:WPA;S:FASTWEB-EUK8T4\\ 5Hz;P:BCAXTYDCD9;;';
 
@@ -145,6 +175,71 @@ function PhotoCapture({ onCapture }) {
     
     setCaptured(true);
     onCapture(photo);
+  };
+
+  const preparePollSupabase = async () => {
+    if (!supabase) return;
+    const pool = [...songLibrary];
+    if (pool.length < 10) {
+      setRoundMessage('Servono almeno 10 brani in libreria per preparare un sondaggio.');
+      return;
+    }
+    const selectedSongs = pool.sort(() => Math.random() - 0.5).slice(0, 10);
+    const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
+    const songs = [...selectedSongs, noneOption];
+    const payload = { songs, votingOpen: false, votes: [] };
+    const { data, error } = await supabase
+      .from('k_rounds')
+      .insert({ category: 'poll', state: 'prepared', payload })
+      .select()
+      .single();
+    if (error) {
+      console.error('Errore preparePoll', error);
+      setRoundMessage('Errore nella preparazione del round.');
+      return;
+    }
+    setCurrentRound({ ...payload, id: data.id, state: 'prepared', category: 'poll' });
+    setRoundResults(null);
+    setVotesReceived(0);
+    setRoundMessage('Round preparato con 10 brani casuali.');
+  };
+
+  const openVotingSupabase = async () => {
+    if (!supabase || !currentRound?.id) return;
+    const payload = currentRound;
+    const { error } = await supabase
+      .from('k_rounds')
+      .update({ state: 'voting', payload: { ...payload, votingOpen: true } })
+      .eq('id', currentRound.id);
+    if (error) console.error('Errore openVoting', error);
+  };
+
+  const closeVotingSupabase = async () => {
+    if (!supabase || !currentRound?.id) return;
+    const { data: votesData, error: voteErr } = await supabase
+      .from('k_votes')
+      .select('*')
+      .eq('round_id', currentRound.id);
+    if (voteErr) console.error('Errore fetch voti', voteErr);
+    const roundWithVotes = { ...currentRound, votes: (votesData || []).map(v => ({ userId: v.user_id, songId: v.song_id })) };
+    const results = computeResults(roundWithVotes);
+    const payload = { ...currentRound, votingOpen: false, votes: roundWithVotes.votes, results };
+    const { error } = await supabase
+      .from('k_rounds')
+      .update({ state: 'ended', payload })
+      .eq('id', currentRound.id);
+    if (error) console.error('Errore closeVoting', error);
+    setRoundResults(results);
+    setCurrentRound(null);
+    setVotesReceived(0);
+  };
+
+  const voteSupabase = async (songId) => {
+    if (!supabase || !currentUser || !currentRound?.id) return;
+    const { error } = await supabase
+      .from('k_votes')
+      .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: songId });
+    if (error) console.error('Errore voto', error);
   };
 
   useEffect(() => {
@@ -496,10 +591,38 @@ export default function KaraokeApp() {
   const [importMessage, setImportMessage] = useState('');
   const [roundMessage, setRoundMessage] = useState('');
   const [votesReceived, setVotesReceived] = useState(0);
-  const [socketConnected, setSocketConnected] = useState(false);
   const fileInputRef = useRef(null);
-  const socketRef = useRef(null);
+  const votesChannelRef = useRef(null);
   const registeredOnceRef = useRef(false);
+  const [backendMode, setBackendMode] = useState(isSupabaseConfigured ? 'supabase' : 'mock');
+  const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
+  const isSupabaseReady = isSupabaseConfigured;
+
+  const registerUserSupabase = async (name, photo, silent = false) => {
+    if (!supabase) return null;
+    const { data, error } = await supabase
+      .from('k_users')
+      .insert({ name, photo })
+      .select()
+      .single();
+    if (error) {
+      console.error('Errore registerUser supabase', error);
+      return null;
+    }
+    if (!silent) {
+      setCurrentUser(data);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(data));
+      }
+    }
+    return data;
+  };
+
+  const removeUserSupabase = async (id) => {
+    if (!supabase) return;
+    const { error } = await supabase.from('k_users').delete().eq('id', id);
+    if (error) console.error('Errore removeUser', error);
+  };
 
   useEffect(() => {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(CURRENT_USER_KEY) : null;
@@ -514,89 +637,131 @@ export default function KaraokeApp() {
   }, []);
 
   useEffect(() => {
-    const url = typeof window !== 'undefined'
-      ? `${window.location.protocol}//${window.location.hostname}:4000`
-      : 'http://localhost:4000';
+    try {
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          setSongLibrary(parsed);
+          setLibraryPreview(parsed.slice(0, 10));
+        }
+      }
+    } catch (err) {
+      console.error('Errore nel caricare libreria locale', err);
+    }
+  }, []);
 
-    const socket = io(url, { transports: ['websocket'] });
-    socketRef.current = socket;
+  useEffect(() => {
+    if (backendMode !== 'supabase' || !currentRound?.id || !supabase) return;
+    if (votesChannelRef.current) {
+      votesChannelRef.current.unsubscribe();
+    }
+    const ch = supabase
+      .channel(`votes-${currentRound.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'k_votes', filter: `round_id=eq.${currentRound.id}` }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setCurrentRound(prev => prev ? { ...prev, votes: [...(prev.votes || []), { userId: payload.new.user_id, songId: payload.new.song_id }] } : prev);
+          setVotesReceived(prev => prev + 1);
+        } else if (payload.eventType === 'DELETE') {
+          setCurrentRound(prev => prev ? { ...prev, votes: (prev.votes || []).filter(v => !(v.userId === payload.old.user_id && v.songId === payload.old.song_id)) } : prev);
+          setVotesReceived(prev => Math.max(0, prev - 1));
+        }
+      })
+      .subscribe();
+    votesChannelRef.current = ch;
+    return () => {
+      ch.unsubscribe();
+    };
+  }, [backendMode, currentRound?.id]);
 
-    socket.on('connect', () => setSocketConnected(true));
-    socket.on('disconnect', () => setSocketConnected(false));
+  useEffect(() => {
+    if (!isSupabaseReady) {
+      console.error('Supabase non configurato. In produzione non è previsto fallback. In dev uso backend locale.');
+      if (!isProd) {
+        setBackendMode('mock');
+      }
+      return;
+    }
+    setBackendMode('supabase');
 
-    socket.on('state:init', (state) => {
-      setSongLibrary(state?.songs || []);
-      setLibraryPreview((state?.songs || []).slice(0, 10));
-      setUsers(state?.users || []);
-      setCurrentRound(state?.currentRound || null);
-      setVotesReceived(state?.currentRound?.votes?.length || 0);
+    const init = async () => {
+      // utenti
+      const { data: userData, error: userErr } = await supabase.from('k_users').select('*');
+      if (userErr) console.error('Errore fetch utenti', userErr);
+      if (userData) setUsers(userData);
+
+      // round attivo (non ended)
+      const { data: roundData, error: roundErr } = await supabase
+        .from('k_rounds')
+        .select('*')
+        .neq('state', 'ended')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (roundErr) console.error('Errore fetch round', roundErr);
+      if (roundData && roundData.length > 0) {
+        const r = roundData[0];
+        const payload = r.payload || {};
+        const songs = payload.songs || [];
+        setCurrentRound({ ...payload, id: r.id, state: r.state, category: r.category, votingOpen: payload.votingOpen || false, songs, votes: [] });
+        const { data: votesData } = await supabase.from('k_votes').select('*').eq('round_id', r.id);
+        if (votesData) {
+          setCurrentRound(prev => prev ? { ...prev, votes: votesData.map(v => ({ userId: v.user_id, songId: v.song_id })) } : prev);
+          setVotesReceived(votesData.length);
+        }
+      }
+
+      // auto re-register saved user
       const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(CURRENT_USER_KEY) : null;
       if (saved && !registeredOnceRef.current) {
         try {
           const parsed = JSON.parse(saved);
-          socket.emit('user:register', { name: parsed.name, photo: parsed.photo }, (user) => {
-            registeredOnceRef.current = true;
-            setCurrentUser(user);
-            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-          });
+          await registerUserSupabase(parsed.name, parsed.photo, true);
         } catch (err) {
           console.error('Errore nel registrare utente salvato', err);
         }
       }
-    });
+    };
 
-    socket.on('songs:updated', (songs) => {
-      setSongLibrary(songs || []);
-      setLibraryPreview((songs || []).slice(0, 10));
-      setRoundMessage('');
-    });
+    init();
 
-    socket.on('user:registered', (user) => {
-      setUsers(prev => [...prev, user]);
-    });
+    const usersChannel = supabase
+      .channel('users')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'k_users' }, (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setUsers(prev => [...prev, payload.new]);
+        } else if (payload.eventType === 'DELETE') {
+          setUsers(prev => prev.filter(u => u.id !== payload.old.id));
+        }
+      })
+      .subscribe();
 
-    socket.on('user:removed', (userId) => {
-      setUsers(prev => prev.filter(u => u.id !== userId));
-      setCurrentRound(prev => {
-        if (!prev?.votes) return prev;
-        return { ...prev, votes: prev.votes.filter(v => v.userId !== userId) };
-      });
-      setVotesReceived(prev => Math.max(0, prev - 1));
-    });
-
-    socket.on('round:started', (round) => {
-      setCurrentRound(round);
-      setRoundResults(null);
-      setVotesReceived(round?.votes?.length || 0);
-      setRoundMessage('');
-    });
-
-    socket.on('round:updated', (round) => {
-      setCurrentRound(round);
-      setVotesReceived(round?.votes?.length || 0);
-    });
-
-    socket.on('round:error', (msg) => {
-      setRoundMessage(msg || 'Errore nella gestione del round.');
-    });
-
-    socket.on('round:ended', (results) => {
-      setRoundResults(results);
-      setCurrentRound(null);
-      setVotesReceived(0);
-      setRoundMessage('Risultati pronti.');
-      setView('display');
-    });
-
-    socket.on('round:reset', () => {
-      setCurrentRound(null);
-      setRoundResults(null);
-      setVotesReceived(0);
-      setRoundMessage('');
-    });
+    const roundsChannel = supabase
+      .channel('rounds')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'k_rounds' }, (payload) => {
+        const r = payload.new;
+        const payloadObj = r?.payload || {};
+        const songs = payloadObj.songs || [];
+        const roundObj = r ? {
+          ...payloadObj,
+          id: r.id,
+          state: r.state,
+          category: r.category,
+          votingOpen: payloadObj.votingOpen || false,
+          songs,
+          votes: []
+        } : null;
+        setCurrentRound(roundObj);
+        if (roundObj?.state === 'ended' && payloadObj.results) {
+          setRoundResults(payloadObj.results);
+          setView('display');
+        }
+      })
+      .subscribe();
 
     return () => {
-      socket.disconnect();
+      usersChannel?.unsubscribe();
+      roundsChannel?.unsubscribe();
+      if (votesChannelRef.current) votesChannelRef.current.unsubscribe();
     };
   }, []);
 
@@ -612,19 +777,26 @@ export default function KaraokeApp() {
   }, [currentRound, currentUser, view]);
 
   const handleUserJoin = (name, photo) => {
-    if (!socketRef.current) return;
-    socketRef.current.emit('user:register', { name, photo }, (user) => {
-      setCurrentUser(user);
+    if (backendMode === 'supabase') {
+      registerUserSupabase(name, photo);
       registeredOnceRef.current = true;
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-      }
       setView('waiting');
-    });
+    } else {
+      const user = { id: Date.now(), name, photo, joinedAt: new Date() };
+      setUsers(prev => [...prev, user]);
+      setCurrentUser(user);
+      if (typeof localStorage !== 'undefined') localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+      setView('waiting');
+    }
   };
 
   const handleRemoveUser = (id) => {
-    socketRef.current?.emit('user:remove', id);
+    if (backendMode === 'supabase') {
+      removeUserSupabase(id);
+    } else {
+      setUsers(prev => prev.filter(u => u.id !== id));
+      setCurrentRound(prev => prev ? { ...prev, votes: (prev.votes || []).filter(v => v.userId !== id) } : prev);
+    }
   };
 
   const handleSongFileChange = (event) => {
@@ -638,9 +810,11 @@ export default function KaraokeApp() {
 
       setLibraryErrors(errors);
       if (songs.length > 0) {
-        socketRef.current?.emit('songs:replace', songs);
         setSongLibrary(songs);
         setLibraryPreview(songs.slice(0, 10));
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
+        }
         setImportMessage(`Caricati ${songs.length} brani dalla libreria CSV.`);
       } else {
         setImportMessage('');
@@ -663,10 +837,18 @@ export default function KaraokeApp() {
       return;
     }
 
-    socketRef.current?.emit('round:preparePoll');
-    setRoundResults(null);
-    setVotesReceived(0);
-    setRoundMessage('Round preparato con 10 brani casuali.');
+    if (backendMode === 'supabase') {
+      preparePollSupabase();
+    } else {
+      const selectedSongs = [...songLibrary].sort(() => Math.random() - 0.5).slice(0, 10);
+      const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
+      const songs = [...selectedSongs, noneOption];
+      const round = { id: Date.now(), type: 'poll', category: 'poll', songs, votingOpen: false, votes: [], state: 'prepared' };
+      setCurrentRound(round);
+      setRoundResults(null);
+      setVotesReceived(0);
+      setRoundMessage('Round preparato con 10 brani casuali.');
+    }
   };
 
   const handleOpenVoting = () => {
@@ -674,20 +856,38 @@ export default function KaraokeApp() {
       setRoundMessage('Prepara prima un round sondaggio.');
       return;
     }
-    socketRef.current?.emit('round:openVoting');
-    setRoundMessage('Votazione aperta: i partecipanti possono votare.');
+    if (backendMode === 'supabase') {
+      openVotingSupabase();
+      setRoundMessage('Votazione aperta: i partecipanti possono votare.');
+    } else {
+      setCurrentRound(prev => prev ? { ...prev, votingOpen: true, state: 'voting' } : prev);
+      setRoundMessage('Votazione aperta: i partecipanti possono votare.');
+    }
   };
 
   const handleCloseVoting = () => {
     if (!currentRound) return;
-    socketRef.current?.emit('round:close');
-    setRoundMessage('Votazione chiusa, calcolo risultati...');
+    if (backendMode === 'supabase') {
+      closeVotingSupabase();
+      setRoundMessage('Votazione chiusa, calcolo risultati...');
+    } else {
+      const results = computeResults(currentRound);
+      setRoundResults(results);
+      setCurrentRound(null);
+      setVotesReceived(0);
+      setRoundMessage('Votazione chiusa, risultati pronti.');
+      setView('display');
+    }
   };
 
   const handleResetRound = () => {
-    socketRef.current?.emit('round:reset');
+    if (backendMode === 'supabase') {
+      supabase?.from('k_rounds').update({ state: 'ended', payload: { results: null } }).eq('id', currentRound?.id);
+    }
     setRoundResults(null);
     setRoundMessage('Round azzerato.');
+    setCurrentRound(null);
+    setVotesReceived(0);
   };
 
   const handleStartRound = (category) => {
@@ -700,7 +900,12 @@ export default function KaraokeApp() {
 
   const handleVote = (songId) => {
     if (currentUser && currentRound) {
-      socketRef.current?.emit('round:vote', { userId: currentUser.id, songId });
+      if (backendMode === 'supabase') {
+        voteSupabase(songId);
+      } else {
+        setCurrentRound(prev => prev ? { ...prev, votes: [...(prev.votes || []), { userId: currentUser.id, songId }] } : prev);
+        setVotesReceived(prev => prev + 1);
+      }
     }
   };
 

@@ -13,6 +13,7 @@
   "dependencies": {
     "lucide-react": "^0.562.0",
     "qrcode.react": "^4.2.0",
+    "@supabase/supabase-js": "^2.45.3",
     "socket.io-client": "^4.8.1",
     "socket.io": "^4.8.1",
     "react": "^19.2.0",
