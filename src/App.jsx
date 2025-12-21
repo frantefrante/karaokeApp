@@ -569,7 +569,7 @@ export default function KaraokeApp() {
     const selectedSongs = pool.sort(() => Math.random() - 0.5).slice(0, 10);
     const noneOption = { id: -1, title: 'Nessuno', artist: '—', year: null };
     const songs = [...selectedSongs, noneOption];
-    const payload = { songs, votingOpen: false, votes: [] };
+    const payload = { songs, votingOpen: false, votes: [], type: 'poll' };
     const { data, error } = await supabase
       .from('k_rounds')
       .insert({ category: 'poll', state: 'prepared', payload })
@@ -580,7 +580,7 @@ export default function KaraokeApp() {
       setRoundMessage('Errore nella preparazione del round.');
       return;
     }
-    setCurrentRound({ ...payload, id: data.id, state: 'prepared', category: 'poll' });
+    setCurrentRound({ ...payload, id: data.id, state: 'prepared', category: 'poll', type: 'poll' });
     setRoundResults(null);
     setVotesReceived(0);
     setRoundMessage('Round preparato con 10 brani casuali.');
@@ -588,7 +588,7 @@ export default function KaraokeApp() {
 
   const openVotingSupabase = async () => {
     if (!supabase || !currentRound?.id) return;
-    const payload = currentRound;
+    const payload = { ...currentRound, type: currentRound.type || 'poll' };
     const { error } = await supabase
       .from('k_rounds')
       .update({ state: 'voting', payload: { ...payload, votingOpen: true } })
@@ -603,9 +603,9 @@ export default function KaraokeApp() {
       .select('*')
       .eq('round_id', currentRound.id);
     if (voteErr) console.error('Errore fetch voti', voteErr);
-    const roundWithVotes = { ...currentRound, votes: (votesData || []).map(v => ({ userId: v.user_id, songId: v.song_id })) };
+    const roundWithVotes = { ...currentRound, type: currentRound.type || 'poll', votes: (votesData || []).map(v => ({ userId: v.user_id, songId: v.song_id })) };
     const results = computeResults(roundWithVotes);
-    const payload = { ...currentRound, votingOpen: false, votes: roundWithVotes.votes, results };
+    const payload = { ...currentRound, type: currentRound.type || 'poll', votingOpen: false, votes: roundWithVotes.votes, results };
     const { error } = await supabase
       .from('k_rounds')
       .update({ state: 'ended', payload })
@@ -702,7 +702,7 @@ export default function KaraokeApp() {
         const r = roundData[0];
         const payload = r.payload || {};
         const songs = payload.songs || [];
-        setCurrentRound({ ...payload, id: r.id, state: r.state, category: r.category, votingOpen: payload.votingOpen || false, songs, votes: [] });
+        setCurrentRound({ ...payload, id: r.id, state: r.state, category: r.category, type: payload.type || r.category || 'poll', votingOpen: payload.votingOpen || false, songs, votes: [] });
         const { data: votesData } = await supabase.from('k_votes').select('*').eq('round_id', r.id);
         if (votesData) {
           setCurrentRound(prev => prev ? { ...prev, votes: votesData.map(v => ({ userId: v.user_id, songId: v.song_id })) } : prev);
@@ -746,6 +746,7 @@ export default function KaraokeApp() {
           id: r.id,
           state: r.state,
           category: r.category,
+          type: payloadObj.type || r.category || 'poll',
           votingOpen: payloadObj.votingOpen || false,
           songs,
           votes: []
