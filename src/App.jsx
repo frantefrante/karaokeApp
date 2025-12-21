@@ -954,7 +954,9 @@ export default function KaraokeApp() {
   };
 
   if (view === 'home') {
-    const siteUrl = 'https://karaokeapp-francesco.netlify.app';
+    const siteUrl = import.meta.env.VITE_SITE_URL
+      ? import.meta.env.VITE_SITE_URL
+      : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173');
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center p-4">
