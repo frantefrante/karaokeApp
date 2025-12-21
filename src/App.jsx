@@ -711,7 +711,7 @@ export default function KaraokeApp() {
   };
 
   if (view === 'home') {
-    const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'http://192.168.x.x:5173';
+    const siteUrl = 'https://karaokeapp-francesco.netlify.app';
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center p-4">
