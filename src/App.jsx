@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye } from 'lucide-react';
 
 const STORAGE_KEY = 'karaoke_songs';
+const CURRENT_USER_KEY = 'karaoke_current_user';
 // Escape space in SSID for better QR compatibility
 const WIFI_QR_VALUE = 'WIFI:T:WPA;S:FASTWEB-EUK8T4\\ 5Hz;P:BCAXTYDCD9;;';
 
@@ -96,13 +97,27 @@ function PhotoCapture({ onCapture }) {
   const videoRef = useRef(null);
   const [stream, setStream] = useState(null);
   const [captured, setCaptured] = useState(false);
+  const [error, setError] = useState('');
+  const placeholderImg = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%236366f1" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" font-size="80" text-anchor="middle" dy=".3em" fill="white"%3E👤%3C/text%3E%3C/svg%3E';
+
+  const usePlaceholder = () => {
+    onCapture(placeholderImg);
+    setCaptured(true);
+  };
 
   const startCamera = async () => {
+    if (typeof window !== 'undefined' && !window.isSecureContext) {
+      setError('La fotocamera richiede https o localhost. Se non puoi abilitarla, continua con l\'avatar di default.');
+      usePlaceholder();
+      return;
+    }
+
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'user' } 
       });
       setStream(mediaStream);
+      setError('');
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.onloadedmetadata = () => {
@@ -111,9 +126,8 @@ function PhotoCapture({ onCapture }) {
       }
     } catch (err) {
       console.error('Errore accesso camera:', err);
-      alert('Impossibile accedere alla camera. Apri l\'app da https:// o http://localhost per abilitare la camera. Useremo un\'immagine placeholder.');
-      onCapture('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%236366f1" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" font-size="80" text-anchor="middle" dy=".3em" fill="white"%3E👤%3C/text%3E%3C/svg%3E');
-      setCaptured(true);
+      setError('Impossibile accedere alla camera. Controlla i permessi e riprova.');
+      usePlaceholder();
     }
   };
 
@@ -153,13 +167,22 @@ function PhotoCapture({ onCapture }) {
   return (
     <div className="text-center">
       {!stream ? (
-        <button
-          onClick={startCamera}
-          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2 mx-auto"
-        >
-          <Camera className="w-5 h-5" />
-          Avvia Camera
-        </button>
+        <div className="space-y-2">
+          <button
+            onClick={startCamera}
+            className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2 mx-auto"
+          >
+            <Camera className="w-5 h-5" />
+            Avvia Camera
+          </button>
+          <button
+            onClick={usePlaceholder}
+            className="text-sm text-blue-700 underline block mx-auto"
+          >
+            Continua senza camera (usa avatar)
+          </button>
+          {error && <p className="text-sm text-red-600 max-w-xs mx-auto">{error}</p>}
+        </div>
       ) : (
         <div>
           <video
@@ -278,10 +301,26 @@ function WheelOfFortune({ items, type = 'users', onComplete }) {
 
 function VotingInterface({ songs, onVote }) {
   const [selectedSong, setSelectedSong] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
 
-  const handleVote = (song) => {
-    setSelectedSong(song);
-    onVote(song.id);
+  useEffect(() => {
+    setSelectedSong(null);
+    setSubmitted(false);
+  }, [songs]);
+
+  const handleSelect = (song) => {
+    if (submitted) return;
+    if (selectedSong?.id === song.id) {
+      setSelectedSong(null);
+    } else {
+      setSelectedSong(song);
+    }
+  };
+
+  const handleSubmit = () => {
+    if (!selectedSong || submitted) return;
+    onVote(selectedSong.id);
+    setSubmitted(true);
   };
 
   return (
@@ -291,8 +330,8 @@ function VotingInterface({ songs, onVote }) {
         {songs.map(song => (
           <button
             key={song.id}
-            onClick={() => handleVote(song)}
-            disabled={selectedSong !== null}
+            onClick={() => handleSelect(song)}
+            disabled={submitted}
             className={`p-4 rounded-lg border-2 text-left transition-all ${
               selectedSong?.id === song.id
                 ? 'bg-green-500 text-white border-green-600 scale-105'
@@ -306,11 +345,23 @@ function VotingInterface({ songs, onVote }) {
           </button>
         ))}
       </div>
-      {selectedSong && (
-        <div className="mt-6 text-center text-green-600 font-bold">
-          ✓ Voto registrato per "{selectedSong.title}"!
-        </div>
-      )}
+      <div className="mt-6 flex flex-col items-center gap-2">
+        <button
+          onClick={handleSubmit}
+          disabled={!selectedSong || submitted}
+          className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 disabled:opacity-50"
+        >
+          Invia voto
+        </button>
+        {submitted && selectedSong && (
+          <div className="text-center text-green-600 font-bold">
+            ✓ Voto registrato per "{selectedSong.title}"!
+          </div>
+        )}
+        {!submitted && selectedSong && (
+          <div className="text-xs text-gray-600">Puoi deselezionare o scegliere un altro brano prima di inviare.</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -448,6 +499,19 @@ export default function KaraokeApp() {
   const [socketConnected, setSocketConnected] = useState(false);
   const fileInputRef = useRef(null);
   const socketRef = useRef(null);
+  const registeredOnceRef = useRef(false);
+
+  useEffect(() => {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(CURRENT_USER_KEY) : null;
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        setCurrentUser(parsed);
+      } catch (err) {
+        console.error('Errore nel leggere il profilo salvato', err);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     const url = typeof window !== 'undefined'
@@ -466,6 +530,19 @@ export default function KaraokeApp() {
       setUsers(state?.users || []);
       setCurrentRound(state?.currentRound || null);
       setVotesReceived(state?.currentRound?.votes?.length || 0);
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(CURRENT_USER_KEY) : null;
+      if (saved && !registeredOnceRef.current) {
+        try {
+          const parsed = JSON.parse(saved);
+          socket.emit('user:register', { name: parsed.name, photo: parsed.photo }, (user) => {
+            registeredOnceRef.current = true;
+            setCurrentUser(user);
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+          });
+        } catch (err) {
+          console.error('Errore nel registrare utente salvato', err);
+        }
+      }
     });
 
     socket.on('songs:updated', (songs) => {
@@ -538,6 +615,10 @@ export default function KaraokeApp() {
     if (!socketRef.current) return;
     socketRef.current.emit('user:register', { name, photo }, (user) => {
       setCurrentUser(user);
+      registeredOnceRef.current = true;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+      }
       setView('waiting');
     });
   };
@@ -656,11 +737,11 @@ export default function KaraokeApp() {
 
           <div className="space-y-4">
             <button
-              onClick={() => setView('join')}
+              onClick={() => (currentUser ? setView('waiting') : setView('join'))}
               className="w-full bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-3 text-lg font-semibold"
             >
               <Users className="w-6 h-6" />
-              Entra come Partecipante
+              {currentUser ? `Continua come ${currentUser.name}` : 'Entra come Partecipante'}
             </button>
 
             <button
