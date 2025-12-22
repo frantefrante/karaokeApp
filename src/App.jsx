@@ -306,13 +306,16 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     const randomWinnerIndex = Math.floor(Math.random() * items.length);
     const anglePerItem = 360 / items.length;
 
-    // Gli items sono posizionati a intervalli regolari partendo da 0° (in alto)
-    // Item 0 = 0°, Item 1 = anglePerItem°, Item 2 = 2*anglePerItem°, etc.
-    // La freccia punta in alto (a 0° della ruota fissa)
-    // Per far sì che l'item X finisca sotto la freccia, dobbiamo ruotare la ruota
-    // in modo che la posizione dell'item X arrivi a 0°
-    // Quindi dobbiamo ruotare di: -anglePerItem * randomWinnerIndex
-    // Ma aggiungiamo 360 per evitare rotazioni negative nel modulo
+    // SPIEGAZIONE DETTAGLIATA:
+    // - Gli items sono posizionati con rotate(angle) dove angle = anglePerItem * i
+    // - Item 0 è a 0°, Item 1 è a anglePerItem°, Item 2 è a 2*anglePerItem°, etc.
+    // - La freccia punta a 0° (in alto) e non si muove
+    // - Vogliamo che l'item selezionato finisca esattamente sotto la freccia (a 0°)
+    //
+    // FORMULA:
+    // Se l'item è a posizione X°, per portarlo a 0° devo ruotare di -X°
+    // Esempio: Item a 90° -> ruoto di -90° -> Item arriva a 0°
+
     const itemPosition = anglePerItem * randomWinnerIndex;
     const targetAngle = -itemPosition;
 
@@ -320,14 +323,16 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     const fullSpins = 8 + Math.floor(Math.random() * 5);
     const finalRotation = 360 * fullSpins + targetAngle;
 
-    console.log('🎰 Ruota della Fortuna DEBUG:', {
-      totalItems: items.length,
-      winnerIndex: randomWinnerIndex,
-      winnerName: items[randomWinnerIndex]?.name || items[randomWinnerIndex]?.title,
-      anglePerItem,
-      itemPosition,
-      targetAngle,
-      finalRotation
+    console.log('🎰 Ruota della Fortuna - Calcolo Preciso:', {
+      '1_TotaleItems': items.length,
+      '2_WinnerIndex': randomWinnerIndex,
+      '3_WinnerName': items[randomWinnerIndex]?.name || items[randomWinnerIndex]?.title,
+      '4_AnglePerItem': anglePerItem + '°',
+      '5_ItemPosition': itemPosition + '° (posizione iniziale item)',
+      '6_TargetAngle': targetAngle + '° (rotazione necessaria)',
+      '7_FullSpins': fullSpins + ' giri',
+      '8_FinalRotation': finalRotation + '°',
+      '9_FinalPosition': (finalRotation % 360) + '° (posizione finale normalizzata)'
     });
 
     setRotation(finalRotation);
