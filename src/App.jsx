@@ -284,93 +284,153 @@ function PhotoCapture({ onCapture }) {
   );
 }
 
-function WheelOfFortune({ items, type = 'users', onComplete }) {
+function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false }) {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+
+  useEffect(() => {
+    if (autoSpin && !spinning && !winner) {
+      spinWheel();
+    }
+  }, [autoSpin]);
 
   const spinWheel = () => {
     if (spinning) return;
-    
+
     setSpinning(true);
-    const spins = 5 + Math.random() * 3;
-    const finalRotation = 360 * spins + Math.random() * 360;
+    setShowCelebration(false);
+
+    // Calcola il vincitore in anticipo per posizionare la freccia correttamente
+    const randomWinnerIndex = Math.floor(Math.random() * items.length);
+    const anglePerItem = 360 / items.length;
+    const targetAngle = randomWinnerIndex * anglePerItem;
+
+    // Aggiungi giri completi (6-8 giri) + angolo target
+    const fullSpins = 6 + Math.floor(Math.random() * 3);
+    const finalRotation = 360 * fullSpins + targetAngle;
+
     setRotation(finalRotation);
 
+    // Dopo l'animazione, mostra il vincitore
     setTimeout(() => {
-      const winnerIndex = Math.floor((finalRotation % 360) / (360 / items.length));
-      const selectedWinner = items[winnerIndex];
+      const selectedWinner = items[randomWinnerIndex];
       setWinner(selectedWinner);
       setSpinning(false);
+      setShowCelebration(true);
       if (onComplete) onComplete(selectedWinner);
-    }, 4000);
+    }, 6000);
   };
 
   return (
     <div className="relative flex flex-col items-center gap-6">
-      <div className="relative w-80 h-80">
-        <div
-          className="absolute inset-0 rounded-full border-8 border-yellow-400 bg-gradient-to-br from-purple-600 to-pink-600 shadow-2xl transition-transform duration-[4000ms] ease-out"
-          style={{ transform: `rotate(${rotation}deg)` }}
-        >
-          {items.map((item, i) => {
-            const angle = (360 / items.length) * i;
-            return (
-              <div
-                key={i}
-                className="absolute top-1/2 left-1/2 origin-left"
-                style={{
-                  transform: `rotate(${angle}deg) translateX(80px)`,
-                  width: '80px',
-                  marginTop: '-40px'
-                }}
-              >
-                {type === 'users' ? (
-                  <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-white mx-auto mb-1 overflow-hidden border-4 border-white">
-                      <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />
-                    </div>
-                    <p className="text-xs font-bold text-white drop-shadow-lg">{item.name}</p>
-                  </div>
-                ) : (
-                  <div className="text-center">
-                    <Music className="w-12 h-12 text-white mx-auto mb-1" />
-                    <p className="text-xs font-bold text-white drop-shadow-lg">{item.title}</p>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      {/* Confetti Animation quando c'è un vincitore */}
+      {showCelebration && (
+        <div className="fixed inset-0 pointer-events-none z-50">
+          {[...Array(50)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute animate-pulse"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `-10%`,
+                animation: `fall ${2 + Math.random() * 3}s linear infinite`,
+                animationDelay: `${Math.random() * 2}s`,
+                fontSize: '2rem',
+                opacity: 0.8
+              }}
+            >
+              {['🎉', '🎊', '⭐', '✨', '🎈'][Math.floor(Math.random() * 5)]}
+            </div>
+          ))}
         </div>
-        
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-2 z-10">
-          <div className="w-0 h-0 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-t-[40px] border-t-red-600"></div>
-        </div>
-      </div>
-
-      {!winner && (
-        <button
-          onClick={spinWheel}
-          disabled={spinning}
-          className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-xl font-bold px-12 py-4 rounded-full hover:from-yellow-500 hover:to-orange-600 disabled:opacity-50 shadow-lg"
-        >
-          {spinning ? 'GIRANDO...' : '🎰 GIRA LA RUOTA!'}
-        </button>
       )}
 
-      {winner && (
-        <div className="text-center animate-bounce">
-          <h2 className="text-4xl font-bold text-yellow-400 mb-4">🎉 VINCITORE! 🎉</h2>
+      {!winner ? (
+        <>
+          <div className="relative w-96 h-96">
+            <div
+              className="absolute inset-0 rounded-full border-8 border-yellow-400 bg-gradient-to-br from-purple-600 to-pink-600 shadow-2xl"
+              style={{
+                transform: `rotate(${rotation}deg)`,
+                transition: spinning ? 'transform 6s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none'
+              }}
+            >
+              {items.map((item, i) => {
+                const angle = (360 / items.length) * i;
+                return (
+                  <div
+                    key={i}
+                    className="absolute top-1/2 left-1/2 origin-left"
+                    style={{
+                      transform: `rotate(${angle}deg) translateX(110px)`,
+                      width: '80px',
+                      marginTop: '-40px'
+                    }}
+                  >
+                    {type === 'users' ? (
+                      <div className="text-center">
+                        <div className="w-20 h-20 rounded-full bg-white mx-auto mb-1 overflow-hidden border-4 border-white shadow-lg">
+                          <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />
+                        </div>
+                        <p className="text-xs font-bold text-white drop-shadow-lg">{item.name}</p>
+                      </div>
+                    ) : (
+                      <div className="text-center">
+                        <Music className="w-12 h-12 text-white mx-auto mb-1" />
+                        <p className="text-xs font-bold text-white drop-shadow-lg">{item.title}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Freccia indicatore */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-4 z-10">
+              <div className="w-0 h-0 border-l-[25px] border-l-transparent border-r-[25px] border-r-transparent border-t-[50px] border-t-red-600 drop-shadow-lg"></div>
+            </div>
+          </div>
+
+          {!autoSpin && (
+            <button
+              onClick={spinWheel}
+              disabled={spinning}
+              className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-2xl font-bold px-16 py-5 rounded-full hover:from-yellow-500 hover:to-orange-600 disabled:opacity-50 shadow-2xl transform hover:scale-105 transition-all"
+            >
+              {spinning ? 'GIRANDO...' : '🎰 GIRA LA RUOTA!'}
+            </button>
+          )}
+
+          {spinning && (
+            <p className="text-xl font-semibold text-gray-700 animate-pulse">
+              Chi sarà il fortunato? 🤔
+            </p>
+          )}
+        </>
+      ) : (
+        <div className="text-center">
+          <div className="animate-bounce mb-6">
+            <h2 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-600 mb-4">
+              🎉 VINCITORE! 🎉
+            </h2>
+          </div>
           {type === 'users' ? (
-            <div>
-              <img src={winner.photo} alt={winner.name} className="w-32 h-32 rounded-full mx-auto border-8 border-yellow-400 mb-2" />
-              <p className="text-2xl font-bold">{winner.name}</p>
+            <div className="transform scale-110 transition-all">
+              <img
+                src={winner.photo}
+                alt={winner.name}
+                className="w-48 h-48 rounded-full mx-auto border-8 border-yellow-400 mb-4 shadow-2xl animate-pulse"
+              />
+              <p className="text-5xl font-bold text-gray-800 mb-2">{winner.name}</p>
+              <p className="text-2xl text-gray-600">È il tuo turno di cantare! 🎤</p>
             </div>
           ) : (
             <div>
-              <Music className="w-24 h-24 text-yellow-400 mx-auto mb-2" />
-              <p className="text-2xl font-bold">{winner.title}</p>
-              <p className="text-lg text-gray-600">{winner.artist}</p>
+              <Music className="w-32 h-32 text-yellow-400 mx-auto mb-4" />
+              <p className="text-4xl font-bold">{winner.title}</p>
+              <p className="text-2xl text-gray-600">{winner.artist}</p>
             </div>
           )}
         </div>
@@ -440,6 +500,111 @@ function VotingInterface({ songs, onVote }) {
         )}
         {!submitted && selectedSong && (
           <div className="text-xs text-gray-600">Puoi deselezionare o scegliere un altro brano prima di inviare.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WinnerSongSelection({ winner, songs, onSelectSong }) {
+  const [selectedSong, setSelectedSong] = useState(null);
+  const [confirmed, setConfirmed] = useState(false);
+
+  const handleConfirm = () => {
+    if (!selectedSong) return;
+    setConfirmed(true);
+    if (onSelectSong) onSelectSong(selectedSong);
+  };
+
+  if (confirmed && selectedSong) {
+    return (
+      <div className="max-w-4xl mx-auto text-center py-12">
+        <div className="mb-8">
+          <h2 className="text-5xl font-bold text-green-600 mb-4">✅ Brano Confermato!</h2>
+          <img
+            src={winner.photo}
+            alt={winner.name}
+            className="w-32 h-32 rounded-full mx-auto border-4 border-green-500 mb-4"
+          />
+          <p className="text-2xl font-semibold text-gray-800 mb-2">{winner.name}</p>
+        </div>
+        <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-8 border-4 border-purple-300">
+          <Music className="w-20 h-20 text-purple-600 mx-auto mb-4" />
+          <p className="text-3xl font-bold text-gray-800 mb-2">{selectedSong.title}</p>
+          <p className="text-xl text-gray-600 mb-4">{selectedSong.artist}</p>
+          {selectedSong.year && (
+            <p className="text-lg text-gray-500">Anno: {selectedSong.year}</p>
+          )}
+        </div>
+        <p className="mt-8 text-xl text-gray-700">Preparati a cantare! 🎤🎶</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl mx-auto py-8">
+      {/* Header con vincitore */}
+      <div className="text-center mb-8">
+        <h2 className="text-4xl font-bold text-purple-600 mb-4">🎉 Scegli il tuo brano!</h2>
+        <div className="flex items-center justify-center gap-4 mb-6">
+          <img
+            src={winner.photo}
+            alt={winner.name}
+            className="w-24 h-24 rounded-full border-4 border-yellow-400"
+          />
+          <div className="text-left">
+            <p className="text-2xl font-bold text-gray-800">{winner.name}</p>
+            <p className="text-lg text-gray-600">È il tuo momento! 🌟</p>
+          </div>
+        </div>
+        <p className="text-lg text-gray-700">Scegli uno dei 20 brani estratti per te:</p>
+      </div>
+
+      {/* Griglia dei brani */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        {songs.map((song, index) => (
+          <button
+            key={song.id}
+            onClick={() => setSelectedSong(song)}
+            className={`p-5 rounded-xl border-3 text-left transition-all transform hover:scale-102 ${
+              selectedSong?.id === song.id
+                ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white border-purple-600 scale-105 shadow-2xl'
+                : 'bg-white border-gray-200 hover:border-purple-400 hover:shadow-lg'
+            }`}
+          >
+            <div className="flex items-start gap-3">
+              <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${
+                selectedSong?.id === song.id ? 'bg-white text-purple-600' : 'bg-purple-100 text-purple-600'
+              }`}>
+                {index + 1}
+              </div>
+              <div className="flex-1">
+                <div className="font-bold text-lg mb-1">{song.title}</div>
+                <div className={`text-sm ${selectedSong?.id === song.id ? 'text-purple-100' : 'text-gray-600'}`}>
+                  {song.artist}{song.year ? ` • ${song.year}` : ''}
+                </div>
+              </div>
+              {selectedSong?.id === song.id && (
+                <CheckCircle className="w-6 h-6 text-white flex-shrink-0" />
+              )}
+            </div>
+          </button>
+        ))}
+      </div>
+
+      {/* Pulsante di conferma */}
+      <div className="text-center">
+        <button
+          onClick={handleConfirm}
+          disabled={!selectedSong}
+          className="bg-gradient-to-r from-green-500 to-emerald-600 text-white text-xl font-bold px-12 py-5 rounded-full hover:from-green-600 hover:to-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-2xl transform hover:scale-105 transition-all"
+        >
+          {selectedSong ? `Conferma "${selectedSong.title}"` : 'Seleziona un brano'}
+        </button>
+        {selectedSong && (
+          <p className="mt-4 text-sm text-gray-600">
+            Hai selezionato: <span className="font-bold">{selectedSong.title}</span>
+          </p>
         )}
       </div>
     </div>
@@ -993,12 +1158,99 @@ export default function KaraokeApp() {
     }
   };
 
+  const handleStartWheel = async () => {
+    setRoundMessage('');
+    if (users.length < 2) {
+      setRoundMessage('Servono almeno 2 partecipanti per la Ruota della Fortuna.');
+      return;
+    }
+    if (songLibrary.length < 20) {
+      setRoundMessage('Servono almeno 20 brani in libreria per la Ruota della Fortuna.');
+      return;
+    }
+
+    // Seleziona 20 brani casuali
+    const selectedSongs = [...songLibrary].sort(() => Math.random() - 0.5).slice(0, 20);
+
+    if (backendMode === 'supabase') {
+      const payload = {
+        type: 'wheel',
+        state: 'spinning',
+        users: users,
+        songs: selectedSongs,
+        winner: null,
+        selectedSong: null
+      };
+      const { data, error } = await supabase
+        .from('k_rounds')
+        .insert({ category: 'wheel', state: 'spinning', payload })
+        .select()
+        .single();
+      if (error) {
+        console.error('Errore avvio ruota', error);
+        setRoundMessage('Errore nell\'avvio della ruota.');
+        return;
+      }
+      setCurrentRound({ ...payload, id: data.id });
+      setRoundMessage('Ruota della Fortuna avviata!');
+      setView('display');
+    } else {
+      const round = {
+        id: Date.now(),
+        type: 'wheel',
+        category: 'wheel',
+        state: 'spinning',
+        users: users,
+        songs: selectedSongs,
+        winner: null,
+        selectedSong: null
+      };
+      setCurrentRound(round);
+      setRoundMessage('Ruota della Fortuna avviata!');
+      setView('display');
+    }
+  };
+
+  const handleWheelComplete = async (winner) => {
+    if (backendMode === 'supabase' && currentRound?.id) {
+      const payload = {
+        ...currentRound,
+        state: 'winner_selected',
+        winner: winner
+      };
+      await supabase
+        .from('k_rounds')
+        .update({ state: 'winner_selected', payload })
+        .eq('id', currentRound.id);
+    }
+    setCurrentRound(prev => prev ? { ...prev, state: 'winner_selected', winner } : prev);
+  };
+
+  const handleSongSelected = async (song) => {
+    if (backendMode === 'supabase' && currentRound?.id) {
+      const payload = {
+        ...currentRound,
+        state: 'song_selected',
+        selectedSong: song
+      };
+      await supabase
+        .from('k_rounds')
+        .update({ state: 'song_selected', payload })
+        .eq('id', currentRound.id);
+    }
+    setCurrentRound(prev => prev ? { ...prev, state: 'song_selected', selectedSong: song } : prev);
+  };
+
   const handleStartRound = (category) => {
     if (category === 'poll') {
       handlePreparePoll();
       return;
     }
-    setRoundMessage('Modalità extra non disponibili con il server socket in questa versione.');
+    if (category === 'wheel') {
+      handleStartWheel();
+      return;
+    }
+    setRoundMessage('Modalità extra non ancora disponibili.');
   };
 
   const handleVote = (songId) => {
@@ -1666,22 +1918,55 @@ export default function KaraokeApp() {
                 </div>
               )}
 
+              {/* Ruota della Fortuna */}
+              {currentRound.type === 'wheel' && (
+                <div>
+                  {currentRound.state === 'spinning' && currentRound.users && (
+                    <WheelOfFortune
+                      items={currentRound.users}
+                      type="users"
+                      autoSpin={true}
+                      onComplete={handleWheelComplete}
+                    />
+                  )}
+                  {currentRound.state === 'winner_selected' && currentRound.winner && currentRound.songs && (
+                    <WinnerSongSelection
+                      winner={currentRound.winner}
+                      songs={currentRound.songs}
+                      onSelectSong={handleSongSelected}
+                    />
+                  )}
+                  {currentRound.state === 'song_selected' && currentRound.winner && currentRound.selectedSong && (
+                    <div className="text-center py-12">
+                      <h2 className="text-4xl font-bold text-green-600 mb-8">🎉 È tutto pronto! 🎉</h2>
+                      <div className="mb-8">
+                        <img
+                          src={currentRound.winner.photo}
+                          alt={currentRound.winner.name}
+                          className="w-40 h-40 rounded-full mx-auto border-8 border-yellow-400 mb-4"
+                        />
+                        <p className="text-3xl font-bold text-gray-800">{currentRound.winner.name}</p>
+                      </div>
+                      <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-8 max-w-2xl mx-auto border-4 border-purple-300">
+                        <Music className="w-24 h-24 text-purple-600 mx-auto mb-4" />
+                        <p className="text-4xl font-bold text-gray-800 mb-2">{currentRound.selectedSong.title}</p>
+                        <p className="text-2xl text-gray-600">{currentRound.selectedSong.artist}</p>
+                        {currentRound.selectedSong.year && (
+                          <p className="text-xl text-gray-500 mt-2">Anno: {currentRound.selectedSong.year}</p>
+                        )}
+                      </div>
+                      <p className="mt-8 text-2xl text-gray-700">Preparati a cantare! 🎤🎶</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {currentRound.animation === 'wheel' && currentRound.type === 'duet' && (
                 <WheelOfFortune
                   items={currentRound.users}
                   type="users"
                   onComplete={() => {}}
                 />
-              )}
-
-              {currentRound.animation === 'wheel' && currentRound.type === 'wheel' && (
-                <div className="text-center">
-                  <WheelOfFortune
-                    items={[currentRound.song]}
-                    type="songs"
-                    onComplete={() => {}}
-                  />
-                </div>
               )}
 
               {currentRound.type === 'free_choice' && currentRound.user && (
