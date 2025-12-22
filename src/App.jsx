@@ -135,6 +135,56 @@ const parseCSVLine = (line, delimiter) => {
     );
   }
 
+  if (view === 'adminLogin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+          <h2 className="text-2xl font-bold mb-4 text-center">Accesso Organizzatore</h2>
+          <p className="text-sm text-gray-600 text-center mb-6">Inserisci credenziali (user: admin, pw: admin).</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              const user = formData.get('user');
+              const pass = formData.get('pass');
+              if (user === 'admin' && pass === 'admin') {
+                setIsAdminMode(true);
+                if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'true');
+                setAdminLoginError('');
+                setView('admin');
+              } else {
+                setAdminLoginError('Credenziali non valide.');
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-semibold mb-1">User</label>
+              <input name="user" className="w-full border rounded-lg px-3 py-2" autoComplete="username" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Password</label>
+              <input name="pass" type="password" className="w-full border rounded-lg px-3 py-2" autoComplete="current-password" />
+            </div>
+            {adminLoginError && <p className="text-sm text-red-600">{adminLoginError}</p>}
+            <button
+              type="submit"
+              className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
+            >
+              Accedi
+            </button>
+          </form>
+          <button
+            onClick={() => setView('home')}
+            className="mt-4 text-sm text-gray-600 hover:text-gray-800 block mx-auto"
+          >
+            ← Torna alla Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (current.length > 0 || line.endsWith(delimiter)) {
     values.push(current.trim());
   }
@@ -617,6 +667,7 @@ export default function KaraokeApp() {
     return localStorage.getItem(ADMIN_MODE_KEY) === 'true';
   });
   const [showQRCodes, setShowQRCodes] = useState(false);
+  const [adminLoginError, setAdminLoginError] = useState('');
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -1098,7 +1149,10 @@ export default function KaraokeApp() {
             </button>
 
             <button
-              onClick={() => setView('admin')}
+              onClick={() => {
+                setAdminLoginError('');
+                setView('adminLogin');
+              }}
               className="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 flex items-center justify-center gap-3 text-lg font-semibold"
             >
               <Play className="w-6 h-6" />
