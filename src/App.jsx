@@ -306,14 +306,29 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     const randomWinnerIndex = Math.floor(Math.random() * items.length);
     const anglePerItem = 360 / items.length;
 
-    // La freccia è in alto (0°), quindi vogliamo che l'item sia posizionato lì
-    // Calcoliamo l'angolo necessario per portare l'item selezionato in cima
-    // L'item 0 è già in cima a 0°, item 1 a anglePerItem°, etc.
-    const targetAngle = 360 - (randomWinnerIndex * anglePerItem);
+    // Gli items sono posizionati a intervalli regolari partendo da 0° (in alto)
+    // Item 0 = 0°, Item 1 = anglePerItem°, Item 2 = 2*anglePerItem°, etc.
+    // La freccia punta in alto (a 0° della ruota fissa)
+    // Per far sì che l'item X finisca sotto la freccia, dobbiamo ruotare la ruota
+    // in modo che la posizione dell'item X arrivi a 0°
+    // Quindi dobbiamo ruotare di: -anglePerItem * randomWinnerIndex
+    // Ma aggiungiamo 360 per evitare rotazioni negative nel modulo
+    const itemPosition = anglePerItem * randomWinnerIndex;
+    const targetAngle = -itemPosition;
 
     // Aggiungi giri completi (8-12 giri per effetto più spettacolare)
     const fullSpins = 8 + Math.floor(Math.random() * 5);
     const finalRotation = 360 * fullSpins + targetAngle;
+
+    console.log('🎰 Ruota della Fortuna DEBUG:', {
+      totalItems: items.length,
+      winnerIndex: randomWinnerIndex,
+      winnerName: items[randomWinnerIndex]?.name || items[randomWinnerIndex]?.title,
+      anglePerItem,
+      itemPosition,
+      targetAngle,
+      finalRotation
+    });
 
     setRotation(finalRotation);
 
@@ -323,6 +338,7 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     // Dopo l'animazione, attendi altri 3 secondi prima di mostrare il vincitore
     setTimeout(() => {
       const selectedWinner = items[randomWinnerIndex];
+      console.log('✅ Vincitore selezionato:', selectedWinner.name || selectedWinner.title);
       setWinner(selectedWinner);
       setSpinning(false);
 
@@ -763,8 +779,10 @@ export default function KaraokeApp() {
   const [currentRound, setCurrentRound] = useState(null);
   const [roundResults, setRoundResults] = useState(null);
   const [songLibrary, setSongLibrary] = useState([]);
-  const [libraryPreview, setLibraryPreview] = useState([]);
   const [libraryErrors, setLibraryErrors] = useState([]);
+  const [songSearchQuery, setSongSearchQuery] = useState('');
+  const [editingSongId, setEditingSongId] = useState(null);
+  const [showAddSongForm, setShowAddSongForm] = useState(false);
   const [importMessage, setImportMessage] = useState('');
   const [roundMessage, setRoundMessage] = useState('');
   const [votesReceived, setVotesReceived] = useState(0);
@@ -780,6 +798,10 @@ export default function KaraokeApp() {
   });
   const [showQRCodes, setShowQRCodes] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState('');
+  const [adminSection, setAdminSection] = useState('dashboard'); // dashboard, songs, users, games
+  const [songSearch, setSongSearch] = useState('');
+  const [editingSong, setEditingSong] = useState(null);
+  const [showAddSong, setShowAddSong] = useState(false);
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -908,7 +930,6 @@ export default function KaraokeApp() {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) {
           setSongLibrary(parsed);
-          setLibraryPreview(parsed.slice(0, 10));
         }
       }
     } catch (err) {
@@ -1183,6 +1204,57 @@ export default function KaraokeApp() {
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem(CURRENT_USER_KEY);
     }
+  };
+
+  const handleAddSong = (title, artist, year) => {
+    if (!title || !artist) {
+      alert('Titolo e artista sono obbligatori');
+      return;
+    }
+    const newSong = {
+      id: Date.now(),
+      title: title.trim(),
+      artist: artist.trim(),
+      year: year ? parseInt(year) : null
+    };
+    const updatedLibrary = [...songLibrary, newSong];
+    setSongLibrary(updatedLibrary);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+    }
+    setShowAddSongForm(false);
+    setImportMessage(`Brano "${title}" aggiunto con successo!`);
+    setTimeout(() => setImportMessage(''), 3000);
+  };
+
+  const handleUpdateSong = (id, title, artist, year) => {
+    if (!title || !artist) {
+      alert('Titolo e artista sono obbligatori');
+      return;
+    }
+    const updatedLibrary = songLibrary.map(song =>
+      song.id === id
+        ? { ...song, title: title.trim(), artist: artist.trim(), year: year ? parseInt(year) : null }
+        : song
+    );
+    setSongLibrary(updatedLibrary);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+    }
+    setEditingSongId(null);
+    setImportMessage('Brano modificato con successo!');
+    setTimeout(() => setImportMessage(''), 3000);
+  };
+
+  const handleDeleteSong = (id) => {
+    if (!confirm('Sei sicuro di voler eliminare questo brano?')) return;
+    const updatedLibrary = songLibrary.filter(song => song.id !== id);
+    setSongLibrary(updatedLibrary);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+    }
+    setImportMessage('Brano eliminato!');
+    setTimeout(() => setImportMessage(''), 3000);
   };
 
   const handleStartWheel = async () => {
@@ -1592,254 +1664,301 @@ export default function KaraokeApp() {
       setView('adminLogin');
       return null;
     }
-    const categories = [
-      { id: 'duet', name: 'Duetti', icon: Users },
-      { id: 'wheel', name: 'Ruota della Fortuna', icon: Disc },
-      { id: 'free_choice', name: 'Scelta Libera', icon: Music },
-      { id: 'year', name: 'Categoria per Anno', icon: Calendar },
-      { id: 'pass_mic', name: 'Passa il Microfono', icon: Mic }
+    const gameCategories = [
+      { id: 'poll', name: 'Sondaggio Brani', icon: Music, color: 'from-purple-500 to-pink-500' },
+      { id: 'duet', name: 'Duetti', icon: Users, color: 'from-blue-500 to-cyan-500' },
+      { id: 'wheel', name: 'Ruota della Fortuna', icon: Disc, color: 'from-yellow-500 to-orange-500' },
+      { id: 'free_choice', name: 'Scelta Libera', icon: Music, color: 'from-green-500 to-teal-500' },
+      { id: 'year', name: 'Categoria per Anno', icon: Calendar, color: 'from-indigo-500 to-purple-500' },
+      { id: 'pass_mic', name: 'Passa il Microfono', icon: Mic, color: 'from-pink-500 to-rose-500' }
     ];
     const pollPrepared = currentRound && currentRound.type === 'poll';
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-800 to-gray-900 p-4">
-        <div className="max-w-4xl mx-auto py-8">
-          <div className="bg-white rounded-2xl shadow-2xl p-8">
-            <h2 className="text-3xl font-bold mb-6">Pannello Organizzatore</h2>
+        <div className="max-w-6xl mx-auto py-8">
+          <h2 className="text-4xl font-bold mb-8 text-white text-center">Pannello Organizzatore</h2>
 
-            <div className="mb-8 p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-gray-600">Utenti connessi: <span className="font-bold">{users.length}</span></p>
-              <div className="flex items-center gap-4 text-sm text-gray-700 mt-1 flex-wrap">
-                <span className="font-semibold">Voti ricevuti: {votesReceived}</span>
-                <span>Libreria brani: {songLibrary.length}</span>
-                <button
-                  onClick={handleResetParticipants}
-                  className="text-sm text-red-700 underline"
-                >
-                  Reset partecipanti
-                </button>
+          {/* Card Utenti */}
+          <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                  <Users className="w-7 h-7 text-blue-600" />
+                  Partecipanti
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">Gestisci i partecipanti registrati</p>
               </div>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {users.map(user => (
-                  <div key={user.id} className="flex items-center gap-2 bg-white px-3 py-1 rounded-full border">
-                    <img src={user.photo} alt={user.name} className="w-6 h-6 rounded-full" />
-                    <span className="text-sm">{user.name}</span>
-                    <button
-                      onClick={() => handleRemoveUser(user.id)}
-                      className="text-xs text-red-600 hover:text-red-800"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+              <div className="text-right">
+                <p className="text-4xl font-bold text-blue-600">{users.length}</p>
+                <p className="text-xs text-gray-500 uppercase">Totale</p>
               </div>
             </div>
-
-            <div className="mb-8 p-6 bg-gray-50 rounded-xl border border-gray-200">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-sm uppercase text-gray-500 font-semibold">Libreria brani</p>
-                  <p className="text-2xl font-bold text-gray-800">{songLibrary.length} brani totali</p>
-                </div>
-                <div className="flex gap-2">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".csv"
-                    className="hidden"
-                    onChange={handleSongFileChange}
-                  />
+            <div className="flex gap-2 flex-wrap">
+              {users.map(user => (
+                <div key={user.id} className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full border border-gray-200 hover:border-blue-400 transition-all">
+                  <img src={user.photo} alt={user.name} className="w-8 h-8 rounded-full" />
+                  <span className="text-sm font-semibold">{user.name}</span>
                   <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
+                    onClick={() => handleRemoveUser(user.id)}
+                    className="text-xs text-red-600 hover:text-red-800 ml-1"
                   >
-                    <Upload className="w-5 h-5" />
-                    Carica CSV
+                    ✕
                   </button>
                 </div>
+              ))}
+              {users.length === 0 && (
+                <p className="text-sm text-gray-500">Nessun partecipante registrato</p>
+              )}
+            </div>
+            <button
+              onClick={handleResetParticipants}
+              className="mt-4 text-sm text-red-600 hover:text-red-700 font-semibold"
+            >
+              Reset tutti i partecipanti
+            </button>
+          </div>
+
+          {/* Card Brani */}
+          <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
+                  <Music className="w-7 h-7 text-purple-600" />
+                  Libreria Brani
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">Gestisci la tua libreria musicale</p>
               </div>
+              <div className="text-right">
+                <p className="text-4xl font-bold text-purple-600">{songLibrary.length}</p>
+                <p className="text-xs text-gray-500 uppercase">Brani totali</p>
+              </div>
+            </div>
 
-              {importMessage && (
-                <div className="flex items-center gap-2 text-green-800 bg-green-100 border border-green-200 p-3 rounded-lg mb-3">
-                  <CheckCircle className="w-5 h-5" />
-                  <span>{importMessage}</span>
-                </div>
-              )}
+            <div className="flex gap-2 mb-4 flex-wrap">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv"
+                className="hidden"
+                onChange={handleSongFileChange}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-semibold"
+              >
+                <Upload className="w-5 h-5" />
+                Importa CSV
+              </button>
+              <button
+                onClick={() => setShowAddSongForm(!showAddSongForm)}
+                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
+              >
+                <Music className="w-5 h-5" />
+                {showAddSongForm ? 'Annulla' : 'Aggiungi Brano'}
+              </button>
+            </div>
 
-              {libraryErrors.length > 0 && (
-                <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-3">
-                  <p className="font-bold mb-1">Errori di parsing:</p>
-                  <ul className="list-disc pl-5 text-sm space-y-1">
-                    {libraryErrors.map((err, idx) => (
-                      <li key={idx}>{err}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            {importMessage && (
+              <div className="flex items-center gap-2 text-green-800 bg-green-100 border border-green-200 p-3 rounded-lg mb-3">
+                <CheckCircle className="w-5 h-5" />
+                <span>{importMessage}</span>
+              </div>
+            )}
 
-              <p className="text-sm font-semibold text-gray-700 mb-2 mt-4">Anteprima (prime 10 righe)</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {libraryPreview.map(song => (
-                  <div key={song.id} className="p-3 bg-white rounded-lg border border-gray-200">
-                    <p className="font-bold">{song.title}</p>
-                    <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+            {libraryErrors.length > 0 && (
+              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-3">
+                <p className="font-bold mb-1">Errori di parsing:</p>
+                <ul className="list-disc pl-5 text-sm space-y-1">
+                  {libraryErrors.map((err, idx) => (
+                    <li key={idx}>{err}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Form Aggiungi Brano */}
+            {showAddSongForm && (
+              <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
+                <h4 className="font-bold text-purple-900 mb-3">Nuovo Brano</h4>
+                <form onSubmit={(e) => {
+                  e.preventDefault();
+                  const formData = new FormData(e.target);
+                  handleAddSong(
+                    formData.get('title'),
+                    formData.get('artist'),
+                    formData.get('year')
+                  );
+                  e.target.reset();
+                }}>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+                    <input
+                      name="title"
+                      placeholder="Titolo"
+                      required
+                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <input
+                      name="artist"
+                      placeholder="Artista"
+                      required
+                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                    />
+                    <input
+                      name="year"
+                      placeholder="Anno (opzionale)"
+                      type="number"
+                      className="px-3 py-2 border border-gray-300 rounded-lg"
+                    />
                   </div>
-                ))}
-                {libraryPreview.length === 0 && (
-                  <div className="text-sm text-gray-500">Nessun brano disponibile.</div>
-                )}
-              </div>
-            </div>
-
-            <div className="mb-8 p-6 bg-purple-50 rounded-xl border border-purple-200">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-purple-900">Sondaggio Brani</h3>
-                  <p className="text-sm text-gray-700">Prepara 10 brani casuali e gestisci apertura/chiusura.</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs uppercase text-gray-500">Stato</p>
-                  <p className="text-lg font-bold text-purple-900">{pollPrepared ? (currentRound?.state || 'in attesa') : 'Nessun round'}</p>
-                </div>
-              </div>
-
-              {songLibrary.length < 10 && (
-                <div className="flex items-center gap-2 text-yellow-800 bg-yellow-100 border border-yellow-200 p-3 rounded-lg mb-4">
-                  <AlertTriangle className="w-5 h-5" />
-                  <span>Carica almeno 10 brani per preparare il sondaggio.</span>
-                </div>
-              )}
-
-              {roundMessage && (
-                <div className="flex items-center gap-2 text-blue-900 bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4">
-                  <CheckCircle className="w-5 h-5 text-blue-700" />
-                  <span>{roundMessage}</span>
-                </div>
-              )}
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <button
-                  onClick={handlePreparePoll}
-                  disabled={songLibrary.length < 10}
-                  className="p-4 bg-white text-purple-900 rounded-lg border border-purple-200 hover:border-purple-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Prepara round (10 brani casuali)
-                </button>
-                <button
-                  onClick={handleOpenVoting}
-                  disabled={!pollPrepared || currentRound?.votingOpen}
-                  className="p-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Apri votazione
-                </button>
-                <button
-                  onClick={handleCloseVoting}
-                  disabled={!currentRound || !currentRound.votingOpen}
-                  className="p-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Chiudi votazione
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between mt-4 text-sm text-gray-700">
-                <span>Voti ricevuti: {votesReceived}</span>
-                <button
-                  onClick={handleResetRound}
-                  className="flex items-center gap-2 text-purple-800 hover:text-purple-900"
-                >
-                  <RefreshCcw className="w-4 h-4" />
-                  Reset round
-                </button>
-              </div>
-            </div>
-
-            {currentRound && (
-              <div className="mb-8 bg-white border border-gray-200 rounded-2xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <Eye className="w-5 h-5 text-gray-600" />
-                    Anteprima display
-                  </h3>
                   <button
-                    onClick={() => setView('display')}
-                    className="text-sm text-purple-700 hover:text-purple-900"
+                    type="submit"
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
                   >
-                    Apri display a schermo
+                    Aggiungi
                   </button>
-                </div>
-                {!currentRound.votingOpen && currentRound.songs && (
-                  <div>
-                    <p className="text-sm text-gray-600 mb-4">Round preparato, votazione non ancora aperta.</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {currentRound.songs.map(song => (
-                        <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                          <p className="font-bold">{song.title}</p>
-                          <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-                {currentRound.votingOpen && currentRound.songs && (
-                  <div>
-                    <p className="text-sm text-gray-600 mb-4">Votazione in corso (anteprima live).</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {currentRound.songs.map(song => {
-                        const votes = (currentRound.votes || []).filter(v => v.songId === song.id).length;
-                        return (
-                          <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                            <p className="font-bold">{song.title}</p>
-                            <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
-                            <div className="mt-2 flex items-center gap-2">
-                              <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                                <div
-                                  className="bg-purple-500 h-full transition-all"
-                                  style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
-                                />
-                              </div>
-                              <span className="text-xs font-semibold text-gray-700">{votes}</span>
+                </form>
+              </div>
+            )}
+
+            {/* Ricerca Brani */}
+            {songLibrary.length > 0 && (
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Cerca per titolo o artista..."
+                  value={songSearchQuery}
+                  onChange={(e) => setSongSearchQuery(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+            )}
+
+            {/* Lista Brani */}
+            {songLibrary.length > 0 && (
+              <div className="max-h-96 overflow-y-auto">
+                <div className="space-y-2">
+                  {songLibrary
+                    .filter(song => {
+                      if (!songSearchQuery) return true;
+                      const query = songSearchQuery.toLowerCase();
+                      return (
+                        song.title.toLowerCase().includes(query) ||
+                        song.artist.toLowerCase().includes(query)
+                      );
+                    })
+                    .map(song => (
+                      <div key={song.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                        {editingSongId === song.id ? (
+                          <form onSubmit={(e) => {
+                            e.preventDefault();
+                            const formData = new FormData(e.target);
+                            handleUpdateSong(
+                              song.id,
+                              formData.get('title'),
+                              formData.get('artist'),
+                              formData.get('year')
+                            );
+                          }}>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                              <input
+                                name="title"
+                                defaultValue={song.title}
+                                required
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                              <input
+                                name="artist"
+                                defaultValue={song.artist}
+                                required
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                              <input
+                                name="year"
+                                defaultValue={song.year || ''}
+                                type="number"
+                                className="px-2 py-1 border border-gray-300 rounded text-sm"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                type="submit"
+                                className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
+                              >
+                                Salva
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingSongId(null)}
+                                className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
+                              >
+                                Annulla
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-gray-800">{song.title}</p>
+                              <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => setEditingSongId(song.id)}
+                                className="text-sm text-blue-600 hover:text-blue-800"
+                              >
+                                Modifica
+                              </button>
+                              <button
+                                onClick={() => handleDeleteSong(song.id)}
+                                className="text-sm text-red-600 hover:text-red-800"
+                              >
+                                Elimina
+                              </button>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                        )}
+                      </div>
+                    ))}
+                </div>
               </div>
             )}
 
-            {roundResults && (
-              <div className="mb-8 bg-white border border-green-200 rounded-2xl p-6">
-                <h3 className="text-xl font-bold text-green-800 mb-4">Risultati ultimi round</h3>
-                {roundResults.winner && (
-                  <div className="mb-4">
-                    <p className="text-sm uppercase text-gray-500">Vincitore</p>
-                    <p className="text-2xl font-bold text-green-700">{roundResults.winner.title}</p>
-                    <p className="text-sm text-gray-600">{roundResults.winner.artist}</p>
-                  </div>
-                )}
-                {roundResults.stats && <ResultList stats={roundResults.stats} compact />}
-                <button
-                  onClick={() => setRoundResults(null)}
-                  className="mt-4 text-sm text-gray-600 hover:text-gray-800"
-                >
-                  Nascondi risultati
-                </button>
-              </div>
+            {songLibrary.length === 0 && (
+              <p className="text-sm text-gray-500 text-center py-4">Nessun brano in libreria. Importa un CSV o aggiungi manualmente.</p>
             )}
+          </div>
 
-            <h3 className="text-xl font-bold mb-4">Altre modalità di gioco</h3>
-            <div className="grid grid-cols-2 gap-4">
-              {categories.map(cat => {
+          {/* Card Modalità di Gioco */}
+          <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+            <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Disc className="w-7 h-7 text-indigo-600" />
+              Modalità di Gioco
+            </h3>
+            <p className="text-sm text-gray-600 mb-6">Seleziona una modalità per avviare un round</p>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              {gameCategories.map(cat => {
                 const IconComponent = cat.icon;
+                const isActive = currentRound?.type === cat.id;
                 return (
                   <button
                     key={cat.id}
-                    onClick={() => handleStartRound(cat.id)}
-                    className="p-6 bg-gradient-to-br from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all"
+                    onClick={() => {
+                      if (cat.id === 'poll') {
+                        // Per il sondaggio, scroll alla sezione dedicata
+                        document.getElementById('poll-section')?.scrollIntoView({ behavior: 'smooth' });
+                      } else {
+                        handleStartRound(cat.id);
+                      }
+                    }}
+                    className={`p-6 bg-gradient-to-br ${cat.color} text-white rounded-xl hover:shadow-xl transition-all transform hover:scale-105 ${
+                      isActive ? 'ring-4 ring-yellow-400' : ''
+                    }`}
                   >
                     <IconComponent className="w-12 h-12 mx-auto mb-2" />
-                    <p className="font-bold">{cat.name}</p>
+                    <p className="font-bold text-center">{cat.name}</p>
+                    {isActive && <p className="text-xs mt-1 text-yellow-200">Attivo</p>}
                   </button>
                 );
               })}
@@ -1848,16 +1967,159 @@ export default function KaraokeApp() {
             {currentRound && currentRound.type !== 'poll' && (
               <button
                 onClick={handleEndRound}
-                className="mt-6 w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700"
+                className="mt-6 w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-semibold"
               >
                 Termina Round Corrente
               </button>
             )}
           </div>
 
+          {/* Card Sondaggio Brani - Sezione dedicata */}
+          <div id="poll-section" className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl shadow-2xl p-6 mb-6 border-2 border-purple-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-2xl font-bold text-purple-900 flex items-center gap-2">
+                  <Music className="w-7 h-7" />
+                  Sondaggio Brani
+                </h3>
+                <p className="text-sm text-gray-700 mt-1">Prepara 10 brani casuali e gestisci la votazione</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs uppercase text-gray-500">Stato</p>
+                <p className="text-lg font-bold text-purple-900">{pollPrepared ? (currentRound?.state || 'in attesa') : 'Nessun round'}</p>
+              </div>
+            </div>
+
+            {songLibrary.length < 10 && (
+              <div className="flex items-center gap-2 text-yellow-800 bg-yellow-100 border border-yellow-200 p-3 rounded-lg mb-4">
+                <AlertTriangle className="w-5 h-5" />
+                <span>Carica almeno 10 brani per preparare il sondaggio.</span>
+              </div>
+            )}
+
+            {roundMessage && (
+              <div className="flex items-center gap-2 text-blue-900 bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4">
+                <CheckCircle className="w-5 h-5 text-blue-700" />
+                <span>{roundMessage}</span>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+              <button
+                onClick={handlePreparePoll}
+                disabled={songLibrary.length < 10}
+                className="p-4 bg-white text-purple-900 rounded-lg border-2 border-purple-200 hover:border-purple-400 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                Prepara round
+              </button>
+              <button
+                onClick={handleOpenVoting}
+                disabled={!pollPrepared || currentRound?.votingOpen}
+                className="p-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                Apri votazione
+              </button>
+              <button
+                onClick={handleCloseVoting}
+                disabled={!currentRound || !currentRound.votingOpen}
+                className="p-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
+              >
+                Chiudi votazione
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between text-sm text-gray-700">
+              <span className="font-semibold">Voti ricevuti: {votesReceived}</span>
+              <button
+                onClick={handleResetRound}
+                className="flex items-center gap-2 text-purple-800 hover:text-purple-900 font-semibold"
+              >
+                <RefreshCcw className="w-4 h-4" />
+                Reset round
+              </button>
+            </div>
+          </div>
+
+          {/* Card Anteprima Display */}
+          {currentRound && (
+            <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                  <Eye className="w-6 h-6 text-gray-600" />
+                  Anteprima Display
+                </h3>
+                <button
+                  onClick={() => setView('display')}
+                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-semibold"
+                >
+                  Apri schermo intero
+                </button>
+              </div>
+              {!currentRound.votingOpen && currentRound.songs && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-4">Round preparato, votazione non ancora aperta.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {currentRound.songs.map(song => (
+                      <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                        <p className="font-bold">{song.title}</p>
+                        <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {currentRound.votingOpen && currentRound.songs && (
+                <div>
+                  <p className="text-sm text-gray-600 mb-4">Votazione in corso ({currentRound.votes?.length || 0}/{users.length} voti)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {currentRound.songs.map(song => {
+                      const votes = (currentRound.votes || []).filter(v => v.songId === song.id).length;
+                      return (
+                        <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                          <p className="font-bold">{song.title}</p>
+                          <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                          <div className="mt-2 flex items-center gap-2">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
+                              <div
+                                className="bg-purple-500 h-full transition-all"
+                                style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold text-gray-700">{votes}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Card Risultati */}
+          {roundResults && (
+            <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-2xl shadow-2xl p-6 mb-6 border-2 border-green-200">
+              <h3 className="text-2xl font-bold text-green-800 mb-4">Risultati Ultimi Round</h3>
+              {roundResults.winner && (
+                <div className="mb-4">
+                  <p className="text-sm uppercase text-gray-500">Vincitore</p>
+                  <p className="text-3xl font-bold text-green-700">{roundResults.winner.title}</p>
+                  <p className="text-lg text-gray-600">{roundResults.winner.artist}</p>
+                </div>
+              )}
+              {roundResults.stats && <ResultList stats={roundResults.stats} compact />}
+              <button
+                onClick={() => setRoundResults(null)}
+                className="mt-4 text-sm text-gray-600 hover:text-gray-800 font-semibold"
+              >
+                Nascondi risultati
+              </button>
+            </div>
+          )}
+
           <button
             onClick={() => setView('home')}
-            className="mt-4 text-white hover:text-gray-300 block mx-auto"
+            className="mt-4 text-white hover:text-gray-300 block mx-auto font-semibold"
           >
             ← Torna alla Home
           </button>
