@@ -61,130 +61,6 @@ const parseCSVLine = (line, delimiter) => {
     current += char;
   }
 
-  if (view === 'participantHome') {
-    const modes = [
-      { id: 'poll', name: 'Sondaggio Brani', description: 'Vota il brano preferito' },
-      { id: 'duet', name: 'Duetti', description: 'Sfida in coppia' },
-      { id: 'wheel', name: 'Ruota della Fortuna', description: 'Selezione casuale' },
-      { id: 'free_choice', name: 'Scelta Libera', description: 'Scegli tu il brano' },
-      { id: 'year', name: 'Categoria per Anno', description: 'Brani per anno' },
-      { id: 'pass_mic', name: 'Passa il Microfono', description: 'Catena di cantanti' }
-    ];
-    const activeId = currentRound?.type;
-
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4">
-        <div className="max-w-4xl mx-auto py-8">
-          <div className="bg-white rounded-2xl shadow-2xl p-8">
-            <h2 className="text-3xl font-bold mb-4 text-center text-gray-800">Area Partecipante</h2>
-            <p className="text-center text-gray-600 mb-6">Scegli cosa vuoi fare o registrati.</p>
-            <div className="flex flex-col md:flex-row gap-4 mb-6">
-              <button
-                onClick={() => (currentUser ? setView('waiting') : setView('join'))}
-                className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
-              >
-                {currentUser ? `Continua come ${currentUser.name}` : 'Registrati / Entra'}
-              </button>
-              {currentRound?.votingOpen && (
-                <button
-                  onClick={() => setView('voting')}
-                  className="flex-1 bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 font-semibold"
-                >
-                  Vai al voto
-                </button>
-              )}
-              <button
-                onClick={() => setView('home')}
-                className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg hover:bg-gray-200 font-semibold"
-              >
-                Home
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {modes.map(mode => (
-                <div
-                  key={mode.id}
-                  className={`p-4 rounded-xl border transition-all ${
-                    activeId === mode.id
-                      ? 'border-blue-500 bg-blue-50 shadow-lg'
-                      : 'border-gray-200 bg-white hover:shadow-md'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-bold text-gray-800">{mode.name}</h3>
-                    {activeId === mode.id && (
-                      <span className="text-sm text-blue-700 font-semibold">Attivo</span>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600 mt-1">{mode.description}</p>
-                  {activeId === mode.id && currentRound?.votingOpen && (
-                    <button
-                      onClick={() => setView('voting')}
-                      className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm"
-                    >
-                      Vai al voto
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (view === 'adminLogin') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-          <h2 className="text-2xl font-bold mb-4 text-center">Accesso Organizzatore</h2>
-          <p className="text-sm text-gray-600 text-center mb-6">Inserisci credenziali (user: admin, pw: admin).</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const formData = new FormData(e.target);
-              const user = formData.get('user');
-              const pass = formData.get('pass');
-              if (user === 'admin' && pass === 'admin') {
-                setIsAdminMode(true);
-                if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'true');
-                setAdminLoginError('');
-                setView('admin');
-              } else {
-                setAdminLoginError('Credenziali non valide.');
-              }
-            }}
-            className="space-y-4"
-          >
-            <div>
-              <label className="block text-sm font-semibold mb-1">User</label>
-              <input name="user" className="w-full border rounded-lg px-3 py-2" autoComplete="username" />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold mb-1">Password</label>
-              <input name="pass" type="password" className="w-full border rounded-lg px-3 py-2" autoComplete="current-password" />
-            </div>
-            {adminLoginError && <p className="text-sm text-red-600">{adminLoginError}</p>}
-            <button
-              type="submit"
-              className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
-            >
-              Accedi
-            </button>
-          </form>
-          <button
-            onClick={() => setView('home')}
-            className="mt-4 text-sm text-gray-600 hover:text-gray-800 block mx-auto"
-          >
-            ← Torna alla Home
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (current.length > 0 || line.endsWith(delimiter)) {
     values.push(current.trim());
   }
@@ -1171,6 +1047,130 @@ export default function KaraokeApp() {
           <div className="mt-8 text-center text-sm text-gray-500">
             <p>Utenti connessi: {users.length}</p>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'participantHome') {
+    const modes = [
+      { id: 'poll', name: 'Sondaggio Brani', description: 'Vota il brano preferito' },
+      { id: 'duet', name: 'Duetti', description: 'Sfida in coppia' },
+      { id: 'wheel', name: 'Ruota della Fortuna', description: 'Selezione casuale' },
+      { id: 'free_choice', name: 'Scelta Libera', description: 'Scegli tu il brano' },
+      { id: 'year', name: 'Categoria per Anno', description: 'Brani per anno' },
+      { id: 'pass_mic', name: 'Passa il Microfono', description: 'Catena di cantanti' }
+    ];
+    const activeId = currentRound?.type;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4">
+        <div className="max-w-4xl mx-auto py-8">
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            <h2 className="text-3xl font-bold mb-4 text-center text-gray-800">Area Partecipante</h2>
+            <p className="text-center text-gray-600 mb-6">Scegli cosa vuoi fare o registrati.</p>
+            <div className="flex flex-col md:flex-row gap-4 mb-6">
+              <button
+                onClick={() => (currentUser ? setView('waiting') : setView('join'))}
+                className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
+              >
+                {currentUser ? `Continua come ${currentUser.name}` : 'Registrati / Entra'}
+              </button>
+              {currentRound?.votingOpen && (
+                <button
+                  onClick={() => setView('voting')}
+                  className="flex-1 bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 font-semibold"
+                >
+                  Vai al voto
+                </button>
+              )}
+              <button
+                onClick={() => setView('home')}
+                className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg hover:bg-gray-200 font-semibold"
+              >
+                Home
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {modes.map(mode => (
+                <div
+                  key={mode.id}
+                  className={`p-4 rounded-xl border transition-all ${
+                    activeId === mode.id
+                      ? 'border-blue-500 bg-blue-50 shadow-lg'
+                      : 'border-gray-200 bg-white hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-gray-800">{mode.name}</h3>
+                    {activeId === mode.id && (
+                      <span className="text-sm text-blue-700 font-semibold">Attivo</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">{mode.description}</p>
+                  {activeId === mode.id && currentRound?.votingOpen && (
+                    <button
+                      onClick={() => setView('voting')}
+                      className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm"
+                    >
+                      Vai al voto
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'adminLogin') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center p-4">
+        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+          <h2 className="text-2xl font-bold mb-4 text-center">Accesso Organizzatore</h2>
+          <p className="text-sm text-gray-600 text-center mb-6">Inserisci credenziali (user: admin, pw: admin).</p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              const user = formData.get('user');
+              const pass = formData.get('pass');
+              if (user === 'admin' && pass === 'admin') {
+                setIsAdminMode(true);
+                if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'true');
+                setAdminLoginError('');
+                setView('admin');
+              } else {
+                setAdminLoginError('Credenziali non valide.');
+              }
+            }}
+            className="space-y-4"
+          >
+            <div>
+              <label className="block text-sm font-semibold mb-1">User</label>
+              <input name="user" className="w-full border rounded-lg px-3 py-2" autoComplete="username" />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Password</label>
+              <input name="pass" type="password" className="w-full border rounded-lg px-3 py-2" autoComplete="current-password" />
+            </div>
+            {adminLoginError && <p className="text-sm text-red-600">{adminLoginError}</p>}
+            <button
+              type="submit"
+              className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
+            >
+              Accedi
+            </button>
+          </form>
+          <button
+            onClick={() => setView('home')}
+            className="mt-4 text-sm text-gray-600 hover:text-gray-800 block mx-auto"
+          >
+            ← Torna alla Home
+          </button>
         </div>
       </div>
     );
