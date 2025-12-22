@@ -312,12 +312,15 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     // - La freccia punta a 0° (in alto) e non si muove
     // - Vogliamo che l'item selezionato finisca esattamente sotto la freccia (a 0°)
     //
-    // FORMULA:
-    // Se l'item è a posizione X°, per portarlo a 0° devo ruotare di -X°
-    // Esempio: Item a 90° -> ruoto di -90° -> Item arriva a 0°
+    // PROBLEMA RILEVATO: L'ago finisce 90° spostato dal vincitore
+    // Questo significa che gli elementi sono posizionati con un offset di 90°
+    // SOLUZIONE: Aggiungiamo un offset di 90° alla rotazione target
+    //
+    // FORMULA CORRETTA:
+    // targetAngle = -itemPosition + 90°
 
     const itemPosition = anglePerItem * randomWinnerIndex;
-    const targetAngle = -itemPosition;
+    const targetAngle = -itemPosition + 90;
 
     // Aggiungi giri completi (8-12 giri per effetto più spettacolare)
     const fullSpins = 8 + Math.floor(Math.random() * 5);
