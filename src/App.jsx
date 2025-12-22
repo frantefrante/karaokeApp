@@ -284,7 +284,7 @@ function PhotoCapture({ onCapture }) {
   );
 }
 
-function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false }) {
+function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, preselectedWinnerIndex = null }) {
   const [rotation, setRotation] = useState(0);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState(null);
@@ -302,8 +302,10 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     setSpinning(true);
     setShowCelebration(false);
 
-    // Calcola il vincitore in anticipo
-    const randomWinnerIndex = Math.floor(Math.random() * items.length);
+    // Usa il vincitore predeterminato se fornito, altrimenti scegline uno casuale
+    const randomWinnerIndex = preselectedWinnerIndex !== null
+      ? preselectedWinnerIndex
+      : Math.floor(Math.random() * items.length);
     const anglePerItem = 360 / items.length;
 
     // ANALISI DAL LOG:
@@ -576,12 +578,14 @@ function VotingInterface({ songs, onVote }) {
   );
 }
 
-function WinnerSongSelection({ winner, songs, onSelectSong }) {
+function WinnerSongSelection({ winner, songs, onSelectSong, currentUser }) {
   const [selectedSong, setSelectedSong] = useState(null);
   const [confirmed, setConfirmed] = useState(false);
 
+  const isWinner = currentUser && currentUser.id === winner.id;
+
   const handleConfirm = () => {
-    if (!selectedSong) return;
+    if (!selectedSong || !isWinner) return;
     setConfirmed(true);
     if (onSelectSong) onSelectSong(selectedSong);
   };
@@ -611,6 +615,35 @@ function WinnerSongSelection({ winner, songs, onSelectSong }) {
     );
   }
 
+  // Se non è il vincitore, mostra solo un messaggio di attesa
+  if (!isWinner) {
+    return (
+      <div className="max-w-4xl mx-auto py-8 text-center">
+        <div className="mb-8">
+          <h2 className="text-4xl font-bold text-purple-600 mb-4">🎉 Abbiamo un vincitore!</h2>
+          <div className="flex items-center justify-center gap-4 mb-6">
+            <img
+              src={winner.photo}
+              alt={winner.name}
+              className="w-32 h-32 rounded-full border-4 border-yellow-400"
+            />
+            <div className="text-left">
+              <p className="text-3xl font-bold text-gray-800">{winner.name}</p>
+              <p className="text-xl text-gray-600">Sta scegliendo il brano... 🎵</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-blue-50 border-2 border-blue-200 rounded-xl p-6">
+          <p className="text-lg text-gray-700">Attendi che {winner.name} scelga il brano da cantare!</p>
+          <div className="animate-pulse mt-4">
+            <Music className="w-16 h-16 text-blue-500 mx-auto" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Il vincitore può scegliere il brano
   return (
     <div className="max-w-4xl mx-auto py-8">
       {/* Header con vincitore */}
@@ -1055,13 +1088,34 @@ export default function KaraokeApp() {
     if (saved && !registeredOnceRef.current) {
       try {
         const parsed = JSON.parse(saved);
-        const user = await registerUserSupabase(parsed.name, parsed.photo, true);
-        if (user) {
-          registeredOnceRef.current = true;
-          setCurrentUser(user);
+
+        // Se ho un ID salvato, cerca l'utente esistente invece di ricrearlo
+        if (parsed.id) {
+          const { data: existingUser } = await supabase
+            .from('k_users')
+            .select('*')
+            .eq('id', parsed.id)
+            .single();
+
+          if (existingUser) {
+            // Utente trovato nel database, usa quello
+            registeredOnceRef.current = true;
+            setCurrentUser(existingUser);
+            console.log('✅ Utente esistente recuperato:', existingUser.name);
+            return;
+          } else {
+            // Utente non trovato (forse è stato eliminato), pulisci localStorage
+            console.log('⚠️ Utente salvato non trovato nel DB, pulisco localStorage');
+            if (typeof localStorage !== 'undefined') {
+              localStorage.removeItem(CURRENT_USER_KEY);
+            }
+          }
         }
+
+        // Se non ho ID o l'utente non esiste più, non fare nulla
+        // L'utente dovrà registrarsi nuovamente manualmente
       } catch (err) {
-        console.error('Errore nel registrare utente salvato', err);
+        console.error('Errore nel recuperare utente salvato', err);
       }
     }
   };
@@ -1086,6 +1140,7 @@ export default function KaraokeApp() {
     const roundsChannel = supabase
       .channel('rounds')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'k_rounds' }, (payload) => {
+        console.log('📢 Round aggiornato:', payload.eventType, payload.new);
         const r = payload.new;
         const payloadObj = r?.payload || {};
         const songs = payloadObj.songs || [];
@@ -1099,6 +1154,8 @@ export default function KaraokeApp() {
           songs,
           votes: payloadObj.votes || []
         } : null;
+
+        console.log('✅ Round object:', { votingOpen: roundObj?.votingOpen, state: roundObj?.state });
 
         if (roundObj?.state === 'ended' && payloadObj.results) {
           setRoundResults(payloadObj.results);
@@ -1322,6 +1379,10 @@ export default function KaraokeApp() {
       return;
     }
 
+    // PRE-CALCOLA il vincitore qui (invece che nella ruota) per sincronizzazione
+    const randomWinnerIndex = Math.floor(Math.random() * users.length);
+    const preselectedWinner = users[randomWinnerIndex];
+
     // Seleziona 20 brani casuali
     const selectedSongs = [...songLibrary].sort(() => Math.random() - 0.5).slice(0, 20);
 
@@ -1331,6 +1392,8 @@ export default function KaraokeApp() {
         state: 'spinning',
         users: users,
         songs: selectedSongs,
+        preselectedWinner: preselectedWinner,  // Vincitore già scelto!
+        preselectedWinnerIndex: randomWinnerIndex,
         winner: null,
         selectedSong: null
       };
@@ -1355,6 +1418,8 @@ export default function KaraokeApp() {
         state: 'spinning',
         users: users,
         songs: selectedSongs,
+        preselectedWinner: preselectedWinner,
+        preselectedWinnerIndex: randomWinnerIndex,
         winner: null,
         selectedSong: null
       };
@@ -2218,48 +2283,53 @@ export default function KaraokeApp() {
                 )}
               </div>
 
-              {currentRound.type === 'poll' && !currentRound.votingOpen && currentRound.songs && (
-                <div>
-                  <p className="text-center text-lg mb-6 text-gray-600">
-                    Round preparato, in attesa di apertura della votazione.
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
-                    {currentRound.songs.map(song => (
-                      <div key={song.id} className="p-4 bg-gray-50 rounded-lg border">
-                        <p className="font-bold text-lg">{song.title}</p>
-                        <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {currentRound.votingOpen && currentRound.songs && (
-                <div>
-                  <p className="text-center text-lg mb-6 text-gray-600">
-                    Votazione in corso... ({currentRound.votes?.length || 0}/{users.length} voti)
-                  </p>
-                  <div className="grid grid-cols-2 gap-4">
-                    {currentRound.songs.map(song => {
-                      const votes = (currentRound.votes || []).filter(v => v.songId === song.id).length;
-                      return (
-                        <div key={song.id} className="p-4 bg-gray-50 rounded-lg">
-                          <p className="font-bold text-lg">{song.title}</p>
-                          <p className="text-sm text-gray-600">{song.artist}</p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
-                              <div 
-                                className="bg-blue-600 h-full transition-all"
-                                style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
-                              />
-                            </div>
-                            <span className="text-sm font-bold">{votes}</span>
+              {/* Poll - Solo se tipo poll E non è una ruota */}
+              {currentRound.type === 'poll' && (
+                <>
+                  {!currentRound.votingOpen && currentRound.songs && (
+                    <div>
+                      <p className="text-center text-lg mb-6 text-gray-600">
+                        Round preparato, in attesa di apertura della votazione.
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        {currentRound.songs.map(song => (
+                          <div key={song.id} className="p-4 bg-gray-50 rounded-lg border">
+                            <p className="font-bold text-lg">{song.title}</p>
+                            <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
                           </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {currentRound.votingOpen && currentRound.songs && (
+                    <div>
+                      <p className="text-center text-lg mb-6 text-gray-600">
+                        Votazione in corso... ({currentRound.votes?.length || 0}/{users.length} voti)
+                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        {currentRound.songs.map(song => {
+                          const votes = (currentRound.votes || []).filter(v => v.songId === song.id).length;
+                          return (
+                            <div key={song.id} className="p-4 bg-gray-50 rounded-lg">
+                              <p className="font-bold text-lg">{song.title}</p>
+                              <p className="text-sm text-gray-600">{song.artist}</p>
+                              <div className="mt-2 flex items-center gap-2">
+                                <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
+                                  <div
+                                    className="bg-blue-600 h-full transition-all"
+                                    style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
+                                  />
+                                </div>
+                                <span className="text-sm font-bold">{votes}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
 
               {/* Ruota della Fortuna */}
@@ -2271,6 +2341,7 @@ export default function KaraokeApp() {
                       type="users"
                       autoSpin={true}
                       onComplete={handleWheelComplete}
+                      preselectedWinnerIndex={currentRound.preselectedWinnerIndex}
                     />
                   )}
                   {currentRound.state === 'winner_selected' && currentRound.winner && currentRound.songs && (
@@ -2278,6 +2349,7 @@ export default function KaraokeApp() {
                       winner={currentRound.winner}
                       songs={currentRound.songs}
                       onSelectSong={handleSongSelected}
+                      currentUser={currentUser}
                     />
                   )}
                   {currentRound.state === 'song_selected' && currentRound.winner && currentRound.selectedSong && (
