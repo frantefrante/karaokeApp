@@ -302,25 +302,36 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     setSpinning(true);
     setShowCelebration(false);
 
-    // Calcola il vincitore in anticipo per posizionare la freccia correttamente
+    // Calcola il vincitore in anticipo
     const randomWinnerIndex = Math.floor(Math.random() * items.length);
     const anglePerItem = 360 / items.length;
-    const targetAngle = randomWinnerIndex * anglePerItem;
 
-    // Aggiungi giri completi (6-8 giri) + angolo target
-    const fullSpins = 6 + Math.floor(Math.random() * 3);
+    // La freccia è in alto (0°), quindi vogliamo che l'item sia posizionato lì
+    // Calcoliamo l'angolo necessario per portare l'item selezionato in cima
+    // L'item 0 è già in cima a 0°, item 1 a anglePerItem°, etc.
+    const targetAngle = 360 - (randomWinnerIndex * anglePerItem);
+
+    // Aggiungi giri completi (8-12 giri per effetto più spettacolare)
+    const fullSpins = 8 + Math.floor(Math.random() * 5);
     const finalRotation = 360 * fullSpins + targetAngle;
 
     setRotation(finalRotation);
 
-    // Dopo l'animazione, mostra il vincitore
+    // Durata totale: 10 secondi per la rotazione
+    const spinDuration = 10000;
+
+    // Dopo l'animazione, attendi altri 3 secondi prima di mostrare il vincitore
     setTimeout(() => {
       const selectedWinner = items[randomWinnerIndex];
       setWinner(selectedWinner);
       setSpinning(false);
-      setShowCelebration(true);
-      if (onComplete) onComplete(selectedWinner);
-    }, 6000);
+
+      // Mostra celebrazione dopo un breve delay
+      setTimeout(() => {
+        setShowCelebration(true);
+        if (onComplete) onComplete(selectedWinner);
+      }, 500);
+    }, spinDuration + 3000);
   };
 
   return (
@@ -349,14 +360,23 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
 
       {!winner ? (
         <>
-          <div className="relative w-96 h-96">
+          <div className="relative w-[500px] h-[500px]">
+            {/* Bordo esterno decorativo */}
+            <div className="absolute inset-0 rounded-full border-[12px] border-yellow-500 shadow-2xl animate-pulse"></div>
+
+            {/* Ruota principale */}
             <div
-              className="absolute inset-0 rounded-full border-8 border-yellow-400 bg-gradient-to-br from-purple-600 to-pink-600 shadow-2xl"
+              className="absolute inset-3 rounded-full bg-gradient-to-br from-purple-600 via-pink-500 to-orange-500 shadow-2xl"
               style={{
                 transform: `rotate(${rotation}deg)`,
-                transition: spinning ? 'transform 6s cubic-bezier(0.17, 0.67, 0.12, 0.99)' : 'none'
+                transition: spinning ? 'transform 10s cubic-bezier(0.05, 0.7, 0.1, 0.99)' : 'none',
+                boxShadow: '0 0 60px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(255, 255, 255, 0.3)'
               }}
             >
+              {/* Centro della ruota */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-white shadow-xl z-20"></div>
+
+              {/* Items sulla ruota */}
               {items.map((item, i) => {
                 const angle = (360 / items.length) * i;
                 return (
@@ -364,22 +384,26 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
                     key={i}
                     className="absolute top-1/2 left-1/2 origin-left"
                     style={{
-                      transform: `rotate(${angle}deg) translateX(110px)`,
-                      width: '80px',
-                      marginTop: '-40px'
+                      transform: `rotate(${angle}deg) translateX(140px)`,
+                      width: '100px',
+                      marginTop: '-50px'
                     }}
                   >
                     {type === 'users' ? (
                       <div className="text-center">
-                        <div className="w-20 h-20 rounded-full bg-white mx-auto mb-1 overflow-hidden border-4 border-white shadow-lg">
+                        <div className="w-24 h-24 rounded-full bg-white mx-auto mb-2 overflow-hidden border-4 border-yellow-300 shadow-2xl">
                           <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />
                         </div>
-                        <p className="text-xs font-bold text-white drop-shadow-lg">{item.name}</p>
+                        <p className="text-sm font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] bg-black bg-opacity-40 px-2 py-1 rounded-lg">
+                          {item.name}
+                        </p>
                       </div>
                     ) : (
                       <div className="text-center">
-                        <Music className="w-12 h-12 text-white mx-auto mb-1" />
-                        <p className="text-xs font-bold text-white drop-shadow-lg">{item.title}</p>
+                        <Music className="w-16 h-16 text-white mx-auto mb-2 drop-shadow-lg" />
+                        <p className="text-sm font-bold text-white drop-shadow-lg bg-black bg-opacity-40 px-2 py-1 rounded-lg">
+                          {item.title}
+                        </p>
                       </div>
                     )}
                   </div>
@@ -387,9 +411,12 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
               })}
             </div>
 
-            {/* Freccia indicatore */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-4 z-10">
-              <div className="w-0 h-0 border-l-[25px] border-l-transparent border-r-[25px] border-r-transparent border-t-[50px] border-t-red-600 drop-shadow-lg"></div>
+            {/* Freccia indicatore migliorata */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-6 z-30">
+              <div className="relative">
+                <div className="w-0 h-0 border-l-[30px] border-l-transparent border-r-[30px] border-r-transparent border-t-[60px] border-t-red-600 drop-shadow-2xl"></div>
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[25px] border-l-transparent border-r-[25px] border-r-transparent border-t-[50px] border-t-yellow-400"></div>
+              </div>
             </div>
           </div>
 
@@ -1322,8 +1349,9 @@ export default function KaraokeApp() {
 
             <button
               onClick={() => {
-                setAdminLoginError('');
-                setView('adminLogin');
+                setIsAdminMode(true);
+                if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'true');
+                setView('admin');
               }}
               className="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 flex items-center justify-center gap-3 text-lg font-semibold"
             >
