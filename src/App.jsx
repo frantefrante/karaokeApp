@@ -5,6 +5,7 @@ import { Camera, Music, Users, Play, Trophy, Disc, Calendar, Mic, Upload, AlertT
 
 const STORAGE_KEY = 'karaoke_songs';
 const CURRENT_USER_KEY = 'karaoke_current_user';
+const ADMIN_MODE_KEY = 'karaoke_admin_mode';
 
 const computeResults = (round) => {
   if (!round) return { winner: null, stats: [] };
@@ -58,6 +59,80 @@ const parseCSVLine = (line, delimiter) => {
     }
 
     current += char;
+  }
+
+  if (view === 'participantHome') {
+    const modes = [
+      { id: 'poll', name: 'Sondaggio Brani', description: 'Vota il brano preferito' },
+      { id: 'duet', name: 'Duetti', description: 'Sfida in coppia' },
+      { id: 'wheel', name: 'Ruota della Fortuna', description: 'Selezione casuale' },
+      { id: 'free_choice', name: 'Scelta Libera', description: 'Scegli tu il brano' },
+      { id: 'year', name: 'Categoria per Anno', description: 'Brani per anno' },
+      { id: 'pass_mic', name: 'Passa il Microfono', description: 'Catena di cantanti' }
+    ];
+    const activeId = currentRound?.type;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-600 to-purple-700 p-4">
+        <div className="max-w-4xl mx-auto py-8">
+          <div className="bg-white rounded-2xl shadow-2xl p-8">
+            <h2 className="text-3xl font-bold mb-4 text-center text-gray-800">Area Partecipante</h2>
+            <p className="text-center text-gray-600 mb-6">Scegli cosa vuoi fare o registrati.</p>
+            <div className="flex flex-col md:flex-row gap-4 mb-6">
+              <button
+                onClick={() => (currentUser ? setView('waiting') : setView('join'))}
+                className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-semibold"
+              >
+                {currentUser ? `Continua come ${currentUser.name}` : 'Registrati / Entra'}
+              </button>
+              {currentRound?.votingOpen && (
+                <button
+                  onClick={() => setView('voting')}
+                  className="flex-1 bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 font-semibold"
+                >
+                  Vai al voto
+                </button>
+              )}
+              <button
+                onClick={() => setView('home')}
+                className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg hover:bg-gray-200 font-semibold"
+              >
+                Home
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {modes.map(mode => (
+                <div
+                  key={mode.id}
+                  className={`p-4 rounded-xl border transition-all ${
+                    activeId === mode.id
+                      ? 'border-blue-500 bg-blue-50 shadow-lg'
+                      : 'border-gray-200 bg-white hover:shadow-md'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-bold text-gray-800">{mode.name}</h3>
+                    {activeId === mode.id && (
+                      <span className="text-sm text-blue-700 font-semibold">Attivo</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-600 mt-1">{mode.description}</p>
+                  {activeId === mode.id && currentRound?.votingOpen && (
+                    <button
+                      onClick={() => setView('voting')}
+                      className="mt-3 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 text-sm"
+                    >
+                      Vai al voto
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (current.length > 0 || line.endsWith(delimiter)) {
@@ -537,6 +612,11 @@ export default function KaraokeApp() {
   const [backendMode, setBackendMode] = useState(isSupabaseConfigured ? 'supabase' : 'mock');
   const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
   const isSupabaseReady = isSupabaseConfigured;
+  const [isAdminMode, setIsAdminMode] = useState(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(ADMIN_MODE_KEY) === 'true';
+  });
+  const [showQRCodes, setShowQRCodes] = useState(false);
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -928,6 +1008,20 @@ export default function KaraokeApp() {
     setVotesReceived(0);
   };
 
+  const handleResetParticipants = async () => {
+    if (backendMode === 'supabase') {
+      const { error } = await supabase.from('k_users').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (error) {
+        console.error('Errore reset utenti', error);
+      }
+    }
+    setUsers([]);
+    setCurrentUser(null);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(CURRENT_USER_KEY);
+    }
+  };
+
   const handleStartRound = (category) => {
     if (category === 'poll') {
       handlePreparePoll();
@@ -968,25 +1062,39 @@ export default function KaraokeApp() {
           </div>
 
           <div className="space-y-3 mb-6">
-            <QrCode
-              value={siteUrl}
-              label="Accedi al sito"
-              sublabel="Inquadra per aprire la webapp"
-            />
-            <QrCode
-              value={WIFI_QR_VALUE}
-              label="Wi‑Fi"
-              sublabel="Inquadra per connetterti (WPA2)"
-            />
+            <button
+              onClick={() => setShowQRCodes(v => !v)}
+              className="w-full bg-purple-100 text-purple-800 border border-purple-300 rounded-lg px-4 py-3 hover:bg-purple-200"
+            >
+              {showQRCodes ? 'Nascondi QR accesso/Wi‑Fi' : 'Mostra QR accesso/Wi‑Fi'}
+            </button>
+            {showQRCodes && (
+              <div className="space-y-3">
+                <QrCode
+                  value={siteUrl}
+                  label="Accedi al sito"
+                  sublabel="Inquadra per aprire la webapp"
+                />
+                <QrCode
+                  value={WIFI_QR_VALUE}
+                  label="Wi‑Fi"
+                  sublabel="Inquadra per connetterti (WPA2)"
+                />
+              </div>
+            )}
           </div>
 
           <div className="space-y-4">
             <button
-              onClick={() => (currentUser ? setView('waiting') : setView('join'))}
+              onClick={() => {
+                setIsAdminMode(false);
+                if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'false');
+                setView('participantHome');
+              }}
               className="w-full bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-3 text-lg font-semibold"
             >
               <Users className="w-6 h-6" />
-              {currentUser ? `Continua come ${currentUser.name}` : 'Entra come Partecipante'}
+              Accedi come Partecipante
             </button>
 
             <button
@@ -1002,7 +1110,7 @@ export default function KaraokeApp() {
               className="w-full bg-purple-600 text-white py-4 rounded-lg hover:bg-purple-700 flex items-center justify-center gap-3 text-lg font-semibold"
             >
               <Trophy className="w-6 h-6" />
-              Schermo Principale
+              Schermo Principale (display)
             </button>
           </div>
 
@@ -1047,12 +1155,14 @@ export default function KaraokeApp() {
           >
             ← Torna alla Home
           </button>
-          <button
-            onClick={() => setView('admin')}
-            className="mt-2 text-gray-600 hover:text-gray-800 block mx-auto"
-          >
-            Vai al Pannello Organizzatore
-          </button>
+          {isAdminMode && (
+            <button
+              onClick={() => setView('admin')}
+              className="mt-2 text-gray-600 hover:text-gray-800 block mx-auto"
+            >
+              Vai al Pannello Organizzatore
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1081,12 +1191,14 @@ export default function KaraokeApp() {
             >
               Vai alla Home
             </button>
-            <button
-              onClick={() => setView('admin')}
-              className="hover:text-gray-200"
-            >
-              Pannello Organizzatore
-            </button>
+            {isAdminMode && (
+              <button
+                onClick={() => setView('admin')}
+                className="hover:text-gray-200"
+              >
+                Pannello Organizzatore
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -1114,6 +1226,12 @@ export default function KaraokeApp() {
               <div className="flex items-center gap-4 text-sm text-gray-700 mt-1 flex-wrap">
                 <span className="font-semibold">Voti ricevuti: {votesReceived}</span>
                 <span>Libreria brani: {songLibrary.length}</span>
+                <button
+                  onClick={handleResetParticipants}
+                  className="text-sm text-red-700 underline"
+                >
+                  Reset partecipanti
+                </button>
               </div>
               <div className="flex gap-2 mt-2 flex-wrap">
                 {users.map(user => (
@@ -1377,7 +1495,7 @@ export default function KaraokeApp() {
           )}
 
           {currentRound && (
-            <div className="bg-white rounded-3xl p-8 shadow-2xl">
+          <div className="bg-white rounded-3xl p-8 shadow-2xl">
               <h2 className="text-3xl font-bold text-center mb-8">
                 {currentRound.type === 'poll' && '🗳️ Sondaggio Brani'}
                 {currentRound.type === 'duet' && '🎭 Duetto'}
