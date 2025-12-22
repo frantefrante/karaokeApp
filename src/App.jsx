@@ -137,27 +137,50 @@ function PhotoCapture({ onCapture }) {
   };
 
   const startCamera = async () => {
+    console.log('🎥 Tentativo di avvio camera...');
+
+    // Controlla se l'API mediaDevices è disponibile
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      console.error('❌ API mediaDevices non disponibile');
+      setError('Il tuo browser non supporta l\'accesso alla fotocamera. Usa l\'avatar di default.');
+      usePlaceholder();
+      return;
+    }
+
     if (typeof window !== 'undefined' && !window.isSecureContext) {
+      console.error('❌ Contesto non sicuro (richiede HTTPS o localhost)');
       setError('La fotocamera richiede https o localhost. Se non puoi abilitarla, continua con l\'avatar di default.');
       usePlaceholder();
       return;
     }
 
+    console.log('✅ Contesto sicuro, richiedo permessi camera...');
+
     try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'user' } 
+      const mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user' }
       });
+      console.log('✅ Camera stream ottenuto:', mediaStream);
       setStream(mediaStream);
       setError('');
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
         videoRef.current.onloadedmetadata = () => {
+          console.log('✅ Video metadata caricato, avvio playback');
           videoRef.current?.play();
         };
       }
     } catch (err) {
-      console.error('Errore accesso camera:', err);
-      setError('Impossibile accedere alla camera. Controlla i permessi e riprova.');
+      console.error('❌ Errore accesso camera:', err.name, err.message);
+      let errorMessage = 'Impossibile accedere alla camera.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        errorMessage = 'Permessi camera negati. Controlla le impostazioni del browser.';
+      } else if (err.name === 'NotFoundError') {
+        errorMessage = 'Nessuna fotocamera trovata sul dispositivo.';
+      } else if (err.name === 'NotReadableError') {
+        errorMessage = 'La fotocamera è già in uso da un\'altra app.';
+      }
+      setError(errorMessage + ' Usa l\'avatar di default.');
       usePlaceholder();
     }
   };
