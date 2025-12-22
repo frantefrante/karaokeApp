@@ -8,7 +8,7 @@ const CURRENT_USER_KEY = 'karaoke_current_user';
 const ADMIN_MODE_KEY = 'karaoke_admin_mode';
 
 const computeResults = (round) => {
-  if (!round) return { winner: null, stats: [] };
+  if (!round) return { winner: null, stats: [], tiedSongs: [] };
   const voteCounts = {};
   const songsList = round.songs || [];
   (round.votes || []).forEach(v => {
@@ -28,12 +28,21 @@ const computeResults = (round) => {
   const threshold = 3;
   const qualified = sorted.filter(s => s.count >= threshold);
   const winner = qualified.length > 0 ? qualified[0] : sorted[0];
+
+  // Controlla se ci sono brani ex aequo al primo posto
+  const topVotes = winner?.count || 0;
+  const tiedSongs = sorted.filter(s => s.count === topVotes && topVotes > 0);
+
+  // Se ci sono 2 o più brani con lo stesso numero di voti (e almeno 1 voto), c'è pareggio
+  const hasTie = tiedSongs.length >= 2;
+
   return {
-    winner: songsList.find(s => s.id === winner?.songId) || null,
+    winner: hasTie ? null : (songsList.find(s => s.id === winner?.songId) || null),
     stats: sorted.map(s => ({
       song: songsList.find(song => song.id === s.songId),
       votes: s.count
-    }))
+    })),
+    tiedSongs: hasTie ? tiedSongs.map(t => songsList.find(s => s.id === t.songId)).filter(Boolean) : []
   };
 };
 // Escape space in SSID for better QR compatibility
@@ -974,15 +983,58 @@ export default function KaraokeApp() {
     if (voteErr) console.error('Errore fetch voti', voteErr);
     const roundWithVotes = { ...currentRound, type: currentRound.type || 'poll', votes: (votesData || []).map(v => ({ userId: v.user_id, songId: v.song_id })) };
     const results = computeResults(roundWithVotes);
-    const payload = { ...currentRound, type: currentRound.type || 'poll', votingOpen: false, votes: roundWithVotes.votes, results };
-    const { error } = await supabase
-      .from('k_rounds')
-      .update({ state: 'ended', payload })
-      .eq('id', currentRound.id);
-    if (error) console.error('Errore closeVoting', error);
-    setRoundResults(results);
-    setCurrentRound(null);
-    setVotesReceived(0);
+
+    // Se c'è un pareggio, avvia automaticamente uno spareggio
+    if (results.tiedSongs && results.tiedSongs.length >= 2) {
+      console.log('⚖️ Pareggio rilevato! Avvio spareggio con', results.tiedSongs.length, 'brani');
+      setRoundMessage(`⚖️ Pareggio! Avvio spareggio tra ${results.tiedSongs.length} brani...`);
+
+      // Termina il round corrente
+      const endPayload = { ...currentRound, type: currentRound.type || 'poll', votingOpen: false, votes: roundWithVotes.votes, results };
+      await supabase
+        .from('k_rounds')
+        .update({ state: 'ended', payload: endPayload })
+        .eq('id', currentRound.id);
+
+      // Crea un nuovo round di spareggio con solo i brani ex aequo
+      const tiebreakPayload = {
+        type: 'poll',
+        category: 'poll',
+        songs: results.tiedSongs,
+        votingOpen: false,
+        votes: [],
+        state: 'prepared',
+        isTiebreaker: true,
+        previousRoundId: currentRound.id
+      };
+
+      const { data: newRound, error: createError } = await supabase
+        .from('k_rounds')
+        .insert({ category: 'poll', state: 'prepared', payload: tiebreakPayload })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('Errore creazione spareggio', createError);
+        setRoundMessage('Errore nella creazione dello spareggio.');
+      } else {
+        setCurrentRound({ ...tiebreakPayload, id: newRound.id });
+        setRoundResults(null);
+        setVotesReceived(0);
+        setRoundMessage(`⚖️ Spareggio preparato! Apri la votazione per i ${results.tiedSongs.length} brani ex aequo.`);
+      }
+    } else {
+      // Nessun pareggio, chiudi normalmente
+      const payload = { ...currentRound, type: currentRound.type || 'poll', votingOpen: false, votes: roundWithVotes.votes, results };
+      const { error } = await supabase
+        .from('k_rounds')
+        .update({ state: 'ended', payload })
+        .eq('id', currentRound.id);
+      if (error) console.error('Errore closeVoting', error);
+      setRoundResults(results);
+      setCurrentRound(null);
+      setVotesReceived(0);
+    }
   };
 
   const voteSupabase = async (songId) => {
@@ -1175,12 +1227,35 @@ export default function KaraokeApp() {
   }, []);
 
   useEffect(() => {
-    const votingActive = currentRound?.votingOpen;
-    const isAdminView = view === 'admin' || view === 'display';
-    if (votingActive && currentUser && !isAdminView && view !== 'voting') {
-      setView('voting');
+    const isAdminView = view === 'admin';
+    const isParticipant = currentUser && !isAdminView;
+
+    if (!isParticipant) return; // Non fare nulla se non sei un partecipante
+
+    // Auto-redirect per votazione poll
+    if (currentRound?.votingOpen && currentRound?.type === 'poll') {
+      if (view !== 'voting' && view !== 'display') {
+        console.log('🔄 Auto-redirect a voting (poll aperto)');
+        setView('voting');
+      }
     }
-    if ((!currentRound || !currentRound.votingOpen) && view === 'voting') {
+    // Torna a waiting quando la votazione si chiude
+    else if (view === 'voting' && (!currentRound || !currentRound.votingOpen)) {
+      console.log('🔄 Auto-redirect a waiting (votazione chiusa)');
+      setView('waiting');
+    }
+    // Auto-redirect per ruota della fortuna
+    else if (currentRound?.type === 'wheel') {
+      if (currentRound.state === 'spinning' || currentRound.state === 'winner_selected' || currentRound.state === 'song_selected') {
+        if (view !== 'display' && view !== 'waiting') {
+          console.log('🔄 Auto-redirect a display (ruota attiva)');
+          setView('display');
+        }
+      }
+    }
+    // Torna a waiting se non c'è un round attivo
+    else if (!currentRound && view !== 'waiting' && view !== 'join' && view !== 'participantHome') {
+      console.log('🔄 Auto-redirect a waiting (nessun round)');
       setView('waiting');
     }
   }, [currentRound, currentUser, view]);
@@ -1285,11 +1360,33 @@ export default function KaraokeApp() {
       setRoundMessage('Votazione chiusa, calcolo risultati...');
     } else {
       const results = computeResults(currentRound);
-      setRoundResults(results);
-      setCurrentRound(null);
-      setVotesReceived(0);
-      setRoundMessage('Votazione chiusa, risultati pronti.');
-      setView('display');
+
+      // Gestione spareggio anche in modalità offline
+      if (results.tiedSongs && results.tiedSongs.length >= 2) {
+        console.log('⚖️ Pareggio rilevato! Avvio spareggio con', results.tiedSongs.length, 'brani');
+        setRoundMessage(`⚖️ Pareggio! Preparato spareggio tra ${results.tiedSongs.length} brani.`);
+
+        const tiebreakRound = {
+          id: Date.now(),
+          type: 'poll',
+          category: 'poll',
+          songs: results.tiedSongs,
+          votingOpen: false,
+          votes: [],
+          state: 'prepared',
+          isTiebreaker: true
+        };
+
+        setCurrentRound(tiebreakRound);
+        setRoundResults(null);
+        setVotesReceived(0);
+      } else {
+        setRoundResults(results);
+        setCurrentRound(null);
+        setVotesReceived(0);
+        setRoundMessage('Votazione chiusa, risultati pronti.');
+        setView('display');
+      }
     }
   };
 
@@ -2094,14 +2191,22 @@ export default function KaraokeApp() {
           </div>
 
           {/* Card Sondaggio Brani - Sezione dedicata */}
-          <div id="poll-section" className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-2xl shadow-2xl p-6 mb-6 border-2 border-purple-200">
+          <div id="poll-section" className={`bg-gradient-to-br rounded-2xl shadow-2xl p-6 mb-6 border-2 ${
+            currentRound?.isTiebreaker
+              ? 'from-yellow-50 to-orange-50 border-yellow-300'
+              : 'from-purple-50 to-pink-50 border-purple-200'
+          }`}>
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="text-2xl font-bold text-purple-900 flex items-center gap-2">
                   <Music className="w-7 h-7" />
-                  Sondaggio Brani
+                  {currentRound?.isTiebreaker ? '⚖️ Spareggio' : 'Sondaggio Brani'}
                 </h3>
-                <p className="text-sm text-gray-700 mt-1">Prepara 10 brani casuali e gestisci la votazione</p>
+                <p className="text-sm text-gray-700 mt-1">
+                  {currentRound?.isTiebreaker
+                    ? `Votazione di spareggio tra ${currentRound.songs?.length || 0} brani ex aequo`
+                    : 'Prepara 10 brani casuali e gestisci la votazione'}
+                </p>
               </div>
               <div className="text-right">
                 <p className="text-xs uppercase text-gray-500">Stato</p>
@@ -2264,13 +2369,19 @@ export default function KaraokeApp() {
           {currentRound && (
           <div className="bg-white rounded-3xl p-8 shadow-2xl">
               <h2 className="text-3xl font-bold text-center mb-8">
-                {currentRound.type === 'poll' && '🗳️ Sondaggio Brani'}
+                {currentRound.type === 'poll' && (currentRound.isTiebreaker ? '⚖️ Spareggio' : '🗳️ Sondaggio Brani')}
                 {currentRound.type === 'duet' && '🎭 Duetto'}
                 {currentRound.type === 'wheel' && '🎰 Ruota della Fortuna'}
                 {currentRound.type === 'free_choice' && '🎯 Scelta Libera'}
                 {currentRound.type === 'year' && `📅 Brani dell'anno ${currentRound.year}`}
                 {currentRound.type === 'pass_mic' && '🎤 Passa il Microfono'}
               </h2>
+              {currentRound.isTiebreaker && (
+                <div className="mb-6 bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 text-center">
+                  <p className="text-lg font-bold text-yellow-800">⚖️ Votazione di Spareggio</p>
+                  <p className="text-sm text-yellow-700 mt-1">I brani erano ex aequo, vota per decretare il vincitore!</p>
+                </div>
+              )}
 
               <div className="flex items-center justify-between mb-6 text-sm text-gray-600">
                 <span className="px-3 py-1 bg-gray-100 rounded-full border border-gray-200">
