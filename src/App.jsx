@@ -161,15 +161,30 @@ function PhotoCapture({ onCapture }) {
         video: { facingMode: 'user' }
       });
       console.log('✅ Camera stream ottenuto:', mediaStream);
+      console.log('Stream tracks:', mediaStream.getTracks());
       setStream(mediaStream);
       setError('');
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        videoRef.current.onloadedmetadata = () => {
-          console.log('✅ Video metadata caricato, avvio playback');
-          videoRef.current?.play();
-        };
-      }
+
+      // Piccolo delay per assicurarsi che il video element sia renderizzato
+      setTimeout(() => {
+        if (videoRef.current) {
+          console.log('✅ Assegnazione stream al video element');
+          videoRef.current.srcObject = mediaStream;
+          videoRef.current.onloadedmetadata = () => {
+            console.log('✅ Video metadata caricato, dimensioni:',
+              videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
+            videoRef.current?.play().catch(err => {
+              console.error('❌ Errore playback video:', err);
+            });
+          };
+          // Forza play anche senza aspettare metadata
+          videoRef.current.play().catch(err => {
+            console.log('Play anticipato fallito (normale):', err.message);
+          });
+        } else {
+          console.error('❌ videoRef.current è ancora null dopo timeout');
+        }
+      }, 100);
     } catch (err) {
       console.error('❌ Errore accesso camera:', err.name, err.message);
       let errorMessage = 'Impossibile accedere alla camera.';
@@ -249,7 +264,8 @@ function PhotoCapture({ onCapture }) {
             autoPlay
             playsInline
             muted
-            className="w-full max-w-md mx-auto rounded-lg mb-4"
+            className="w-full max-w-md mx-auto rounded-lg mb-4 bg-black"
+            style={{ minHeight: '300px', minWidth: '300px' }}
           />
           <button
             onClick={capturePhoto}
@@ -257,6 +273,11 @@ function PhotoCapture({ onCapture }) {
           >
             📸 Scatta Foto
           </button>
+          {stream && (
+            <p className="text-xs text-gray-500 mt-2">
+              Camera attiva - se non vedi l'anteprima, attendi qualche secondo
+            </p>
+          )}
         </div>
       )}
     </div>
