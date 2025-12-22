@@ -1182,25 +1182,8 @@ export default function KaraokeApp() {
 
   if (view === 'waiting') {
     if (!currentUser) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-          <div className="bg-white rounded-xl shadow p-6 text-center space-y-3">
-            <p className="text-sm text-gray-700">Nessun utente attivo. Torna alla registrazione.</p>
-            <button
-              onClick={() => setView('join')}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-            >
-              Vai alla registrazione
-            </button>
-            <button
-              onClick={() => setView('home')}
-              className="text-sm text-gray-600 hover:text-gray-800 block mx-auto"
-            >
-              ← Home
-            </button>
-          </div>
-        </div>
-      );
+      setView('join');
+      return null;
     }
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center p-4">
@@ -1282,25 +1265,8 @@ export default function KaraokeApp() {
 
   if (view === 'admin') {
     if (!isAdminMode) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-          <div className="bg-white rounded-xl shadow p-6 text-center space-y-3">
-            <p className="text-sm text-gray-700">Accesso organizzatore richiesto.</p>
-            <button
-              onClick={() => setView('adminLogin')}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
-            >
-              Vai al login admin
-            </button>
-            <button
-              onClick={() => setView('home')}
-              className="text-sm text-gray-600 hover:text-gray-800 block mx-auto"
-            >
-              ← Home
-            </button>
-          </div>
-        </div>
-      );
+      setView('adminLogin');
+      return null;
     }
     const categories = [
       { id: 'duet', name: 'Duetti', icon: Users },
@@ -1740,17 +1706,6 @@ export default function KaraokeApp() {
     );
   }
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white rounded-xl shadow p-6 text-center space-y-3">
-        <p className="text-sm text-gray-700">Pagina non disponibile. Torna alla Home.</p>
-        <button
-          onClick={() => setView('home')}
-          className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700"
-        >
-          Vai alla Home
-        </button>
-      </div>
-    </div>
-  );
+  setView('home');
+  return null;
 }
