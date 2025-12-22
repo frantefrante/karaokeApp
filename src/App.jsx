@@ -306,21 +306,19 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
     const randomWinnerIndex = Math.floor(Math.random() * items.length);
     const anglePerItem = 360 / items.length;
 
-    // SPIEGAZIONE DETTAGLIATA:
+    // ANALISI DAL LOG:
     // - Gli items sono posizionati con rotate(angle) dove angle = anglePerItem * i
-    // - Item 0 è a 0°, Item 1 è a anglePerItem°, Item 2 è a 2*anglePerItem°, etc.
+    // - Item 0 è a 0°, Item 1 è a 180°, etc. (con 2 items)
     // - La freccia punta a 0° (in alto) e non si muove
-    // - Vogliamo che l'item selezionato finisca esattamente sotto la freccia (a 0°)
     //
-    // PROBLEMA RILEVATO: L'ago finisce 90° spostato dal vincitore
-    // Questo significa che gli elementi sono posizionati con un offset di 90°
-    // SOLUZIONE: Aggiungiamo un offset di 90° alla rotazione target
+    // PROBLEMA: Con offset +90 la ruota seleziona l'elemento SUCCESSIVO
+    // Dal test: volevo index 0 (a 0°), ruota fermata a 90°, ma arrowAngle = 180° (index 1)
     //
-    // FORMULA CORRETTA:
-    // targetAngle = -itemPosition + 90°
+    // SOLUZIONE: Invertire offset da +90 a -90
+    // In questo modo l'elemento corretto finirà sotto la freccia
 
     const itemPosition = anglePerItem * randomWinnerIndex;
-    const targetAngle = -itemPosition + 90;
+    const targetAngle = -itemPosition - 90;
 
     // Aggiungi giri completi (8-12 giri per effetto più spettacolare)
     const fullSpins = 8 + Math.floor(Math.random() * 5);
