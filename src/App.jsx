@@ -809,6 +809,33 @@ export default function KaraokeApp() {
       setView('waiting');
       return currentUser;
     }
+
+    // Prima controlla se l'utente esiste già (stesso nome e foto)
+    const { data: existingUsers, error: searchError } = await supabase
+      .from('k_users')
+      .select('*')
+      .eq('name', name)
+      .eq('photo', photo);
+
+    if (searchError) {
+      console.error('Errore ricerca utente esistente', searchError);
+    }
+
+    // Se esiste già, usa quello
+    if (existingUsers && existingUsers.length > 0) {
+      const existingUser = existingUsers[0];
+      setCurrentUser(existingUser);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(existingUser));
+      }
+      if (!silent) {
+        registeredOnceRef.current = true;
+        setView('waiting');
+      }
+      return existingUser;
+    }
+
+    // Altrimenti crea un nuovo utente
     const { data, error } = await supabase
       .from('k_users')
       .insert({ name, photo })
