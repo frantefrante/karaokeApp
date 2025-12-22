@@ -345,8 +345,29 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false })
 
     // Dopo l'animazione, attendi altri 3 secondi prima di mostrare il vincitore
     setTimeout(() => {
-      const selectedWinner = items[randomWinnerIndex];
-      console.log('✅ Vincitore selezionato:', selectedWinner.name || selectedWinner.title);
+      // Calcola quale elemento è effettivamente sotto la freccia
+      // La freccia è a 0°, la ruota ha ruotato di finalRotation gradi
+      // Normalizziamo la rotazione finale a 0-360°
+      const normalizedRotation = ((finalRotation % 360) + 360) % 360;
+
+      // La freccia punta a 0°. Con la ruota ruotata, quale elemento è a 0°?
+      // Se la ruota ha ruotato di X°, l'elemento che era a -X° ora è a 0°
+      // Ma dobbiamo considerare l'offset di 90° degli elementi
+      const arrowAngle = (360 - normalizedRotation - 90 + 360) % 360;
+      const actualWinnerIndex = Math.round(arrowAngle / anglePerItem) % items.length;
+
+      const selectedWinner = items[actualWinnerIndex];
+
+      console.log('✅ Verifica Vincitore:', {
+        expectedIndex: randomWinnerIndex,
+        expectedName: items[randomWinnerIndex]?.name || items[randomWinnerIndex]?.title,
+        normalizedRotation: normalizedRotation + '°',
+        arrowAngle: arrowAngle + '°',
+        actualIndex: actualWinnerIndex,
+        actualName: selectedWinner?.name || selectedWinner?.title,
+        match: actualWinnerIndex === randomWinnerIndex ? '✅ CORRETTO' : '❌ ERRORE'
+      });
+
       setWinner(selectedWinner);
       setSpinning(false);
 
