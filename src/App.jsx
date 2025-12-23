@@ -2609,6 +2609,24 @@ export default function KaraokeApp() {
                         )}
                       </div>
                       <p className="mt-8 text-2xl text-gray-700">Preparati a cantare! 🎤🎶</p>
+
+                      {/* Pulsanti per terminare il round */}
+                      {isAdminMode && (
+                        <div className="mt-12 flex gap-4 justify-center">
+                          <button
+                            onClick={handleEndRound}
+                            className="bg-red-600 text-white px-8 py-4 rounded-lg hover:bg-red-700 font-semibold text-lg"
+                          >
+                            Termina Round
+                          </button>
+                          <button
+                            onClick={() => setView('admin')}
+                            className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 font-semibold text-lg"
+                          >
+                            Pannello Organizzatore
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -2661,6 +2679,24 @@ export default function KaraokeApp() {
                   <p className="mt-12 text-3xl text-gray-700 font-semibold">
                     Entrambi avete votato per questa canzone! Preparatevi a duettare! 🎤✨
                   </p>
+
+                  {/* Pulsanti per terminare il round */}
+                  {isAdminMode && (
+                    <div className="mt-12 flex gap-4 justify-center">
+                      <button
+                        onClick={handleEndRound}
+                        className="bg-red-600 text-white px-8 py-4 rounded-lg hover:bg-red-700 font-semibold text-lg"
+                      >
+                        Termina Round
+                      </button>
+                      <button
+                        onClick={() => setView('admin')}
+                        className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 font-semibold text-lg"
+                      >
+                        Pannello Organizzatore
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
