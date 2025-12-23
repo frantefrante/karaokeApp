@@ -3177,9 +3177,6 @@ export default function KaraokeApp() {
                         }}
                       />
                     </div>
-                    <p className="text-sm text-gray-600 mt-2">
-                      {(currentRound.currentIndex || 0) + 1} / {currentRound.songs.length}
-                    </p>
                   </div>
 
                   {/* Pulsanti navigazione (solo admin) */}
