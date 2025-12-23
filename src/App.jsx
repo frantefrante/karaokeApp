@@ -2704,13 +2704,12 @@ export default function KaraokeApp() {
                   onChange={(e) => setSongSearch(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 text-sm"
                 />
-                <div className="max-h-40 overflow-y-auto space-y-1">
+                <div className="max-h-60 overflow-y-auto space-y-1">
                   {songLibrary
                     .filter(s =>
                       s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
                       s.artist.toLowerCase().includes(songSearch.toLowerCase())
                     )
-                    .slice(0, 10)
                     .map(song => (
                       <button
                         key={song.id}
@@ -3152,9 +3151,6 @@ export default function KaraokeApp() {
 
                   {/* Brano corrente */}
                   <div className="mb-8">
-                    <p className="text-2xl text-gray-600 mb-6">
-                      Brano {(currentRound.currentIndex || 0) + 1} di {currentRound.songs.length}
-                    </p>
                     <div className="bg-gradient-to-r from-red-100 via-pink-100 to-red-100 rounded-3xl p-12 max-w-3xl mx-auto border-4 border-red-300 shadow-2xl">
                       <Music className="w-32 h-32 text-red-600 mx-auto mb-6" />
                       <p className="text-6xl font-bold text-gray-800 mb-4">
@@ -3274,6 +3270,30 @@ export default function KaraokeApp() {
                   <Music className="w-32 h-32 mx-auto mb-4 text-yellow-500" />
                   <p className="text-3xl font-bold mb-2">{roundResults.winner.title}</p>
                   <p className="text-xl text-gray-600">{roundResults.winner.artist}</p>
+
+                  {/* Pulsanti integrazione SongBook Pro */}
+                  <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
+                    <button
+                      onClick={() => {
+                        const text = `${roundResults.winner.title} - ${roundResults.winner.artist}`;
+                        navigator.clipboard.writeText(text);
+                        alert('📋 Titolo copiato negli appunti!\n\n' + text);
+                      }}
+                      className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 font-semibold"
+                    >
+                      📋 Copia Titolo
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Apre SongBook Pro con deep link
+                        const searchQuery = encodeURIComponent(roundResults.winner.title);
+                        window.open(`songbook://search?query=${searchQuery}`, '_blank');
+                      }}
+                      className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold"
+                    >
+                      📖 Apri in SongBook Pro
+                    </button>
+                  </div>
                 </div>
               )}
 
