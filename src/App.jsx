@@ -1267,31 +1267,48 @@ export default function KaraokeApp() {
 
     if (!isParticipant) return; // Non fare nulla se non sei un partecipante
 
-    // Auto-redirect per votazione poll
-    if (currentRound?.votingOpen && currentRound?.type === 'poll') {
-      if (view !== 'voting' && view !== 'display') {
-        console.log('🔄 Auto-redirect a voting (poll aperto)');
-        setView('voting');
+    // Se non c'è un round attivo
+    if (!currentRound) {
+      // Permetti di restare in home, join, participantHome, waiting
+      if (view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home') {
+        console.log('🔄 Auto-redirect a waiting (nessun round)');
+        setView('waiting');
       }
+      return;
     }
-    // Torna a waiting quando la votazione si chiude
-    else if (view === 'voting' && (!currentRound || !currentRound.votingOpen)) {
-      console.log('🔄 Auto-redirect a waiting (votazione chiusa)');
-      setView('waiting');
+
+    // Gestisci i redirect in base al tipo di round
+    // IMPORTANTE: Non redirigere mai se l'utente è in 'home', 'join' o 'participantHome' (permetti sempre navigazione manuale)
+    if (view === 'home' || view === 'join' || view === 'participantHome') {
+      return; // Permetti all'utente di restare dove ha scelto di andare
     }
-    // Auto-redirect per ruota della fortuna
-    else if (currentRound?.type === 'wheel') {
+
+    if (currentRound.type === 'wheel') {
+      // Ruota della fortuna: mostra sempre display
       if (currentRound.state === 'spinning' || currentRound.state === 'winner_selected' || currentRound.state === 'song_selected') {
         if (view !== 'display' && view !== 'waiting') {
           console.log('🔄 Auto-redirect a display (ruota attiva)');
           setView('display');
         }
       }
-    }
-    // Torna a waiting se non c'è un round attivo (ma permetti di restare in home, join, participantHome)
-    else if (!currentRound && view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home') {
-      console.log('🔄 Auto-redirect a waiting (nessun round)');
-      setView('waiting');
+    } else if (currentRound.type === 'poll') {
+      // Sondaggio: gestisci votazione
+      if (currentRound.votingOpen) {
+        if (view !== 'voting' && view !== 'display') {
+          console.log('🔄 Auto-redirect a voting (poll aperto)');
+          setView('voting');
+        }
+      } else if (view === 'voting') {
+        // Se sei in voting ma la votazione è chiusa, torna a waiting
+        console.log('🔄 Auto-redirect a waiting (votazione chiusa)');
+        setView('waiting');
+      }
+    } else if (currentRound.type === 'duet') {
+      // Duetto: mostra display
+      if (view !== 'display' && view !== 'waiting') {
+        console.log('🔄 Auto-redirect a display (duetto attivo)');
+        setView('display');
+      }
     }
   }, [currentRound, currentUser, view]);
 
