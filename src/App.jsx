@@ -1253,8 +1253,8 @@ export default function KaraokeApp() {
         }
       }
     }
-    // Torna a waiting se non c'è un round attivo
-    else if (!currentRound && view !== 'waiting' && view !== 'join' && view !== 'participantHome') {
+    // Torna a waiting se non c'è un round attivo (ma permetti di restare in home, join, participantHome)
+    else if (!currentRound && view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home') {
       console.log('🔄 Auto-redirect a waiting (nessun round)');
       setView('waiting');
     }
