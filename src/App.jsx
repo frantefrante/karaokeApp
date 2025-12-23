@@ -45,8 +45,13 @@ const computeResults = (round) => {
     tiedSongs: hasTie ? tiedSongs.map(t => songsList.find(s => s.id === t.songId)).filter(Boolean) : []
   };
 };
-// Escape space in SSID for better QR compatibility
-const WIFI_QR_VALUE = 'WIFI:T:WPA;S:FASTWEB-EUK8T4\\ 5Hz;P:BCAXTYDCD9;;';
+// Funzione per generare il QR WiFi in formato standard
+const generateWifiQR = (ssid, password, encryption = 'WPA') => {
+  // Escape caratteri speciali nel SSID e password
+  const escapedSSID = ssid.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/:/g, '\\:').replace(/ /g, '\\ ');
+  const escapedPassword = password.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/:/g, '\\:');
+  return `WIFI:T:${encryption};S:${escapedSSID};P:${escapedPassword};;`;
+};
 
 const parseCSVLine = (line, delimiter) => {
   const values = [];
@@ -872,12 +877,26 @@ export default function KaraokeApp() {
   const registeredOnceRef = useRef(false);
   const [backendMode, setBackendMode] = useState(isSupabaseConfigured ? 'supabase' : 'mock');
   const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
+
+  // Configurazione WiFi (salvata in localStorage)
+  const [wifiConfig, setWifiConfig] = useState(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('wifi_config') : null;
+    return saved ? JSON.parse(saved) : { ssid: 'FASTWEB-EUK8T4 5Hz', password: 'BCAXTYDCD9', encryption: 'WPA' };
+  });
+
+  // Brani scelti dalla band (salvati in localStorage)
+  const [bandPicksList, setBandPicksList] = useState(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('band_picks_list') : null;
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentBandPickIndex, setCurrentBandPickIndex] = useState(0);
   const isSupabaseReady = isSupabaseConfigured;
   const [isAdminMode, setIsAdminMode] = useState(() => {
     if (typeof localStorage === 'undefined') return false;
     return localStorage.getItem(ADMIN_MODE_KEY) === 'true';
   });
   const [showQRCodes, setShowQRCodes] = useState(false);
+  const [showWiFiConfig, setShowWiFiConfig] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState('');
   const [adminSection, setAdminSection] = useState('dashboard'); // dashboard, songs, users, games
   const [songSearch, setSongSearch] = useState('');
@@ -1314,6 +1333,12 @@ export default function KaraokeApp() {
         console.log('🔄 Auto-redirect a display (duetto attivo)');
         setView('display');
       }
+    } else if (currentRound.type === 'band_picks') {
+      // Scelti dalla Band: mostra display
+      if (view !== 'display' && view !== 'waiting') {
+        console.log('🔄 Auto-redirect a display (band picks attivo)');
+        setView('display');
+      }
     }
   }, [currentRound, currentUser, view, roundResults]);
 
@@ -1742,6 +1767,90 @@ export default function KaraokeApp() {
     }
   };
 
+  const handleStartBandPicks = async () => {
+    if (bandPicksList.length === 0) {
+      setRoundMessage('❌ Aggiungi almeno un brano alla scaletta!');
+      return;
+    }
+
+    setCurrentBandPickIndex(0);
+    const payload = {
+      type: 'band_picks',
+      songs: bandPicksList,
+      currentIndex: 0,
+      state: 'showing'
+    };
+
+    if (backendMode === 'supabase') {
+      const { data, error } = await supabase
+        .from('k_rounds')
+        .insert({ category: 'band_picks', state: 'showing', payload })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Errore creazione scaletta band', error);
+        setRoundMessage('❌ Errore nella creazione della scaletta.');
+        return;
+      }
+
+      setCurrentRound({ ...payload, id: data.id });
+    } else {
+      setCurrentRound({ ...payload, id: Date.now() });
+    }
+
+    setRoundMessage(`🎸 Scaletta avviata: ${bandPicksList.length} brani`);
+    setView('display');
+  };
+
+  const handleNextBandPick = async () => {
+    if (!currentRound || currentRound.type !== 'band_picks') return;
+
+    const nextIndex = (currentRound.currentIndex || 0) + 1;
+
+    if (nextIndex >= bandPicksList.length) {
+      setRoundMessage('✅ Scaletta completata!');
+      handleEndRound();
+      return;
+    }
+
+    const payload = {
+      ...currentRound,
+      currentIndex: nextIndex
+    };
+
+    if (backendMode === 'supabase' && currentRound.id) {
+      await supabase
+        .from('k_rounds')
+        .update({ payload })
+        .eq('id', currentRound.id);
+    }
+
+    setCurrentRound(payload);
+    setCurrentBandPickIndex(nextIndex);
+  };
+
+  const handlePrevBandPick = async () => {
+    if (!currentRound || currentRound.type !== 'band_picks') return;
+
+    const prevIndex = Math.max(0, (currentRound.currentIndex || 0) - 1);
+
+    const payload = {
+      ...currentRound,
+      currentIndex: prevIndex
+    };
+
+    if (backendMode === 'supabase' && currentRound.id) {
+      await supabase
+        .from('k_rounds')
+        .update({ payload })
+        .eq('id', currentRound.id);
+    }
+
+    setCurrentRound(payload);
+    setCurrentBandPickIndex(prevIndex);
+  };
+
   const handleStartRound = (category) => {
     if (category === 'poll') {
       handlePreparePoll();
@@ -1753,6 +1862,10 @@ export default function KaraokeApp() {
     }
     if (category === 'duet') {
       handleStartDuet();
+      return;
+    }
+    if (category === 'band_picks') {
+      handleStartBandPicks();
       return;
     }
     setRoundMessage('Modalità extra non ancora disponibili.');
@@ -1804,10 +1917,85 @@ export default function KaraokeApp() {
                   sublabel="Inquadra per aprire la webapp"
                 />
                 <QrCode
-                  value={WIFI_QR_VALUE}
+                  value={generateWifiQR(wifiConfig.ssid, wifiConfig.password, wifiConfig.encryption)}
                   label="Wi‑Fi"
-                  sublabel="Inquadra per connetterti (WPA2)"
+                  sublabel={`${wifiConfig.ssid} (${wifiConfig.encryption})`}
                 />
+                <button
+                  onClick={() => setShowWiFiConfig(v => !v)}
+                  className="w-full text-sm text-purple-700 hover:text-purple-900 underline"
+                >
+                  {showWiFiConfig ? 'Nascondi configurazione WiFi' : 'Modifica WiFi'}
+                </button>
+                {showWiFiConfig && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                    <h4 className="font-semibold text-purple-900 mb-3">Configurazione WiFi</h4>
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.target);
+                        const newConfig = {
+                          ssid: formData.get('ssid'),
+                          password: formData.get('password'),
+                          encryption: formData.get('encryption')
+                        };
+                        setWifiConfig(newConfig);
+                        localStorage.setItem('wifi_config', JSON.stringify(newConfig));
+                        setShowWiFiConfig(false);
+                      }}
+                      className="space-y-3"
+                    >
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">SSID (Nome rete)</label>
+                        <input
+                          name="ssid"
+                          defaultValue={wifiConfig.ssid}
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Nome della rete WiFi"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input
+                          name="password"
+                          type="text"
+                          defaultValue={wifiConfig.password}
+                          required
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                          placeholder="Password WiFi"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Tipo crittografia</label>
+                        <select
+                          name="encryption"
+                          defaultValue={wifiConfig.encryption}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                        >
+                          <option value="WPA">WPA/WPA2</option>
+                          <option value="WEP">WEP</option>
+                          <option value="nopass">Nessuna (rete aperta)</option>
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="submit"
+                          className="flex-1 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 text-sm font-semibold"
+                        >
+                          Salva
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowWiFiConfig(false)}
+                          className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 text-sm font-semibold"
+                        >
+                          Annulla
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2074,6 +2262,7 @@ export default function KaraokeApp() {
       { id: 'poll', name: 'Sondaggio Brani', icon: Music, color: 'from-purple-500 to-pink-500' },
       { id: 'duet', name: 'Duetti', icon: Users, color: 'from-blue-500 to-cyan-500' },
       { id: 'wheel', name: 'Ruota della Fortuna', icon: Disc, color: 'from-yellow-500 to-orange-500' },
+      { id: 'band_picks', name: 'Scelti dalla Band', icon: Music, color: 'from-red-500 to-pink-500' },
       { id: 'free_choice', name: 'Scelta Libera', icon: Music, color: 'from-green-500 to-teal-500' },
       { id: 'year', name: 'Categoria per Anno', icon: Calendar, color: 'from-indigo-500 to-purple-500' },
       { id: 'pass_mic', name: 'Passa il Microfono', icon: Mic, color: 'from-pink-500 to-rose-500' }
@@ -2378,6 +2567,151 @@ export default function KaraokeApp() {
                 Termina Round Corrente
               </button>
             )}
+          </div>
+
+          {/* Card Scelti dalla Band */}
+          <div className="bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-200 rounded-2xl shadow-2xl p-6 mb-6">
+            <h3 className="text-2xl font-bold text-red-900 mb-4 flex items-center gap-2">
+              <Music className="w-7 h-7" />
+              Scelti dalla Band
+            </h3>
+            <p className="text-sm text-gray-700 mb-4">
+              Crea una scaletta personalizzata. I brani verranno mostrati uno alla volta nell'ordine scelto.
+            </p>
+
+            {/* Lista brani scelti */}
+            {bandPicksList.length > 0 && (
+              <div className="mb-4">
+                <h4 className="font-semibold text-red-800 mb-2">Scaletta ({bandPicksList.length} brani)</h4>
+                <div className="bg-white rounded-lg p-3 max-h-60 overflow-y-auto">
+                  {bandPicksList.map((song, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-2 hover:bg-gray-50 rounded border-b last:border-b-0"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        <span className="text-sm font-bold text-gray-500 w-6">{index + 1}.</span>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800">{song.title}</p>
+                          <p className="text-xs text-gray-600">{song.artist}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => {
+                            const newList = [...bandPicksList];
+                            if (index > 0) {
+                              [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
+                              setBandPicksList(newList);
+                              localStorage.setItem('band_picks_list', JSON.stringify(newList));
+                            }
+                          }}
+                          disabled={index === 0}
+                          className="text-gray-600 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Sposta su"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newList = [...bandPicksList];
+                            if (index < bandPicksList.length - 1) {
+                              [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+                              setBandPicksList(newList);
+                              localStorage.setItem('band_picks_list', JSON.stringify(newList));
+                            }
+                          }}
+                          disabled={index === bandPicksList.length - 1}
+                          className="text-gray-600 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
+                          title="Sposta giù"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          onClick={() => {
+                            const newList = bandPicksList.filter((_, i) => i !== index);
+                            setBandPicksList(newList);
+                            localStorage.setItem('band_picks_list', JSON.stringify(newList));
+                          }}
+                          className="text-red-600 hover:text-red-800 text-sm"
+                          title="Rimuovi"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Form aggiungi brano */}
+            <div className="mb-4">
+              <h4 className="font-semibold text-red-800 mb-2">Aggiungi brano alla scaletta</h4>
+              <div className="bg-white rounded-lg p-3">
+                <input
+                  type="text"
+                  placeholder="Cerca brano nella libreria..."
+                  value={songSearch}
+                  onChange={(e) => setSongSearch(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 text-sm"
+                />
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {songLibrary
+                    .filter(s =>
+                      s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
+                      s.artist.toLowerCase().includes(songSearch.toLowerCase())
+                    )
+                    .slice(0, 10)
+                    .map(song => (
+                      <button
+                        key={song.id}
+                        onClick={() => {
+                          if (!bandPicksList.find(s => s.id === song.id)) {
+                            const newList = [...bandPicksList, song];
+                            setBandPicksList(newList);
+                            localStorage.setItem('band_picks_list', JSON.stringify(newList));
+                            setSongSearch('');
+                          }
+                        }}
+                        className="w-full text-left p-2 hover:bg-red-50 rounded text-sm border border-gray-200"
+                      >
+                        <p className="font-semibold text-gray-800">{song.title}</p>
+                        <p className="text-xs text-gray-600">{song.artist}</p>
+                      </button>
+                    ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Pulsanti azione */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  if (bandPicksList.length === 0) {
+                    alert('Aggiungi almeno un brano alla scaletta!');
+                    return;
+                  }
+                  handleStartRound('band_picks');
+                }}
+                disabled={bandPicksList.length === 0}
+                className="flex-1 bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Avvia Scaletta ({bandPicksList.length} brani)
+              </button>
+              <button
+                onClick={() => {
+                  if (confirm('Vuoi svuotare la scaletta?')) {
+                    setBandPicksList([]);
+                    setCurrentBandPickIndex(0);
+                    localStorage.removeItem('band_picks_list');
+                  }
+                }}
+                className="bg-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-400 font-semibold"
+              >
+                Svuota
+              </button>
+            </div>
           </div>
 
           {/* Card Sondaggio Brani - Sezione dedicata */}
@@ -2752,6 +3086,76 @@ export default function KaraokeApp() {
                         className="bg-red-600 text-white px-8 py-4 rounded-lg hover:bg-red-700 font-semibold text-lg"
                       >
                         Termina Round
+                      </button>
+                      <button
+                        onClick={() => setView('admin')}
+                        className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 font-semibold text-lg"
+                      >
+                        Pannello Organizzatore
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Scelti dalla Band */}
+              {currentRound.type === 'band_picks' && currentRound.songs && (
+                <div className="text-center py-12">
+                  <h2 className="text-5xl font-bold text-red-600 mb-8">🎸 Scelti dalla Band 🎸</h2>
+
+                  {/* Brano corrente */}
+                  <div className="mb-8">
+                    <p className="text-2xl text-gray-600 mb-6">
+                      Brano {(currentRound.currentIndex || 0) + 1} di {currentRound.songs.length}
+                    </p>
+                    <div className="bg-gradient-to-r from-red-100 via-pink-100 to-red-100 rounded-3xl p-12 max-w-3xl mx-auto border-4 border-red-300 shadow-2xl">
+                      <Music className="w-32 h-32 text-red-600 mx-auto mb-6" />
+                      <p className="text-6xl font-bold text-gray-800 mb-4">
+                        {currentRound.songs[currentRound.currentIndex || 0].title}
+                      </p>
+                      <p className="text-4xl text-gray-600">
+                        {currentRound.songs[currentRound.currentIndex || 0].artist}
+                      </p>
+                      {currentRound.songs[currentRound.currentIndex || 0].year && (
+                        <p className="text-2xl text-gray-500 mt-4">
+                          Anno: {currentRound.songs[currentRound.currentIndex || 0].year}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Barra progresso */}
+                  <div className="mb-8 max-w-2xl mx-auto">
+                    <div className="bg-gray-200 rounded-full h-4 overflow-hidden">
+                      <div
+                        className="bg-red-600 h-full transition-all duration-500"
+                        style={{
+                          width: `${((currentRound.currentIndex || 0) + 1) / currentRound.songs.length * 100}%`
+                        }}
+                      />
+                    </div>
+                    <p className="text-sm text-gray-600 mt-2">
+                      {(currentRound.currentIndex || 0) + 1} / {currentRound.songs.length} completati
+                    </p>
+                  </div>
+
+                  {/* Pulsanti navigazione (solo admin) */}
+                  {isAdminMode && (
+                    <div className="mt-12 flex gap-4 justify-center">
+                      <button
+                        onClick={handlePrevBandPick}
+                        disabled={(currentRound.currentIndex || 0) === 0}
+                        className="bg-gray-600 text-white px-8 py-4 rounded-lg hover:bg-gray-700 font-semibold text-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        ← Precedente
+                      </button>
+                      <button
+                        onClick={handleNextBandPick}
+                        className="bg-red-600 text-white px-8 py-4 rounded-lg hover:bg-red-700 font-semibold text-lg"
+                      >
+                        {(currentRound.currentIndex || 0) + 1 < currentRound.songs.length
+                          ? 'Successivo →'
+                          : 'Termina Scaletta ✓'}
                       </button>
                       <button
                         onClick={() => setView('admin')}
