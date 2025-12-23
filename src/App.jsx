@@ -1556,6 +1556,128 @@ export default function KaraokeApp() {
     setCurrentRound(prev => prev ? { ...prev, state: 'song_selected', selectedSong: song } : prev);
   };
 
+  const findDuetPair = async () => {
+    if (backendMode !== 'supabase' || !supabase) {
+      setRoundMessage('I duetti sono disponibili solo con Supabase.');
+      return null;
+    }
+
+    // Cerca tutti i round passati di tipo 'poll' che sono terminati
+    const { data: pastRounds, error: roundsError } = await supabase
+      .from('k_rounds')
+      .select('*')
+      .eq('category', 'poll')
+      .eq('state', 'ended')
+      .order('created_at', { ascending: false });
+
+    if (roundsError || !pastRounds || pastRounds.length === 0) {
+      console.log('Nessun round passato trovato');
+      return null;
+    }
+
+    // Per ogni round, cerca coppie di utenti che hanno votato la stessa canzone
+    for (const round of pastRounds) {
+      const { data: votes, error: votesError } = await supabase
+        .from('k_votes')
+        .select('*')
+        .eq('round_id', round.id);
+
+      if (votesError || !votes || votes.length < 2) continue;
+
+      // Raggruppa i voti per canzone
+      const votesBySong = {};
+      votes.forEach(vote => {
+        const songId = vote.song_id;
+        if (!votesBySong[songId]) votesBySong[songId] = [];
+        votesBySong[songId].push(vote.user_id);
+      });
+
+      // Trova una canzone con almeno 2 voti
+      for (const [songId, userIds] of Object.entries(votesBySong)) {
+        if (userIds.length >= 2) {
+          // Prendi i primi 2 utenti casuali che hanno votato questa canzone
+          const shuffled = [...userIds].sort(() => Math.random() - 0.5);
+          const user1Id = shuffled[0];
+          const user2Id = shuffled[1];
+
+          // Trova le info degli utenti
+          const user1 = users.find(u => u.id === user1Id);
+          const user2 = users.find(u => u.id === user2Id);
+
+          // Trova la canzone dal payload del round
+          const roundPayload = round.payload || {};
+          const songs = roundPayload.songs || [];
+          const song = songs.find(s => String(s.id) === String(songId));
+
+          if (user1 && user2 && song) {
+            console.log('✅ Duetto trovato:', user1.name, '+', user2.name, '→', song.title);
+            return {
+              user1,
+              user2,
+              song,
+              roundId: round.id
+            };
+          }
+        }
+      }
+    }
+
+    console.log('❌ Nessun duetto trovato');
+    return null;
+  };
+
+  const handleStartDuet = async () => {
+    setRoundMessage('Cercando duetto...');
+
+    const duet = await findDuetPair();
+
+    if (!duet) {
+      setRoundMessage('❌ Nessun duetto trovato. Serve almeno 1 votazione passata con 2 utenti che hanno votato la stessa canzone.');
+      return;
+    }
+
+    // Crea un round di tipo 'duet'
+    if (backendMode === 'supabase') {
+      const payload = {
+        type: 'duet',
+        user1: duet.user1,
+        user2: duet.user2,
+        song: duet.song,
+        state: 'ready'
+      };
+
+      const { data, error } = await supabase
+        .from('k_rounds')
+        .insert({ category: 'duet', state: 'ready', payload })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Errore creazione duetto', error);
+        setRoundMessage('❌ Errore nella creazione del duetto.');
+        return;
+      }
+
+      setCurrentRound({ ...payload, id: data.id });
+      setRoundMessage(`✅ Duetto preparato: ${duet.user1.name} + ${duet.user2.name} → ${duet.song.title}`);
+      setView('display');
+    } else {
+      const round = {
+        id: Date.now(),
+        type: 'duet',
+        category: 'duet',
+        user1: duet.user1,
+        user2: duet.user2,
+        song: duet.song,
+        state: 'ready'
+      };
+
+      setCurrentRound(round);
+      setRoundMessage(`✅ Duetto preparato: ${duet.user1.name} + ${duet.user2.name} → ${duet.song.title}`);
+      setView('display');
+    }
+  };
+
   const handleStartRound = (category) => {
     if (category === 'poll') {
       handlePreparePoll();
@@ -1563,6 +1685,10 @@ export default function KaraokeApp() {
     }
     if (category === 'wheel') {
       handleStartWheel();
+      return;
+    }
+    if (category === 'duet') {
+      handleStartDuet();
       return;
     }
     setRoundMessage('Modalità extra non ancora disponibili.');
@@ -2488,12 +2614,54 @@ export default function KaraokeApp() {
                 </div>
               )}
 
-              {currentRound.animation === 'wheel' && currentRound.type === 'duet' && (
-                <WheelOfFortune
-                  items={currentRound.users}
-                  type="users"
-                  onComplete={() => {}}
-                />
+              {/* Duetti */}
+              {currentRound.type === 'duet' && currentRound.state === 'ready' && (
+                <div className="text-center py-12">
+                  <h2 className="text-5xl font-bold text-pink-600 mb-12">💕 Duetto! 💕</h2>
+
+                  {/* Due utenti affiancati */}
+                  <div className="flex justify-center items-center gap-16 mb-12">
+                    {/* Primo utente */}
+                    <div className="text-center">
+                      <img
+                        src={currentRound.user1.photo}
+                        alt={currentRound.user1.name}
+                        className="w-48 h-48 rounded-full mx-auto border-8 border-pink-400 mb-4 shadow-2xl"
+                      />
+                      <p className="text-3xl font-bold text-gray-800">{currentRound.user1.name}</p>
+                    </div>
+
+                    {/* Simbolo cuore */}
+                    <div className="text-8xl text-pink-500">
+                      ❤️
+                    </div>
+
+                    {/* Secondo utente */}
+                    <div className="text-center">
+                      <img
+                        src={currentRound.user2.photo}
+                        alt={currentRound.user2.name}
+                        className="w-48 h-48 rounded-full mx-auto border-8 border-pink-400 mb-4 shadow-2xl"
+                      />
+                      <p className="text-3xl font-bold text-gray-800">{currentRound.user2.name}</p>
+                    </div>
+                  </div>
+
+                  {/* Canzone selezionata */}
+                  <div className="bg-gradient-to-r from-pink-100 via-purple-100 to-pink-100 rounded-3xl p-10 max-w-3xl mx-auto border-4 border-pink-300 shadow-2xl">
+                    <p className="text-2xl text-gray-600 mb-4">🎵 Canterete insieme 🎵</p>
+                    <Music className="w-28 h-28 text-pink-600 mx-auto mb-6" />
+                    <p className="text-5xl font-bold text-gray-800 mb-4">{currentRound.song.title}</p>
+                    <p className="text-3xl text-gray-600">{currentRound.song.artist}</p>
+                    {currentRound.song.year && (
+                      <p className="text-2xl text-gray-500 mt-4">Anno: {currentRound.song.year}</p>
+                    )}
+                  </div>
+
+                  <p className="mt-12 text-3xl text-gray-700 font-semibold">
+                    Entrambi avete votato per questa canzone! Preparatevi a duettare! 🎤✨
+                  </p>
+                </div>
               )}
 
               {currentRound.type === 'free_choice' && currentRound.user && (
