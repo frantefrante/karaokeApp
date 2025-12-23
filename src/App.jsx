@@ -1051,9 +1051,32 @@ export default function KaraokeApp() {
 
   const voteSupabase = async (songId) => {
     if (!supabase || !currentUser || !currentRound?.id) return;
-    const { error } = await supabase
+
+    // Controlla se l'utente ha già votato in questo round
+    const { data: existingVote } = await supabase
       .from('k_votes')
-      .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: String(songId) });
+      .select('*')
+      .eq('round_id', currentRound.id)
+      .eq('user_id', currentUser.id)
+      .single();
+
+    let error;
+    if (existingVote) {
+      // Aggiorna il voto esistente
+      const result = await supabase
+        .from('k_votes')
+        .update({ song_id: String(songId) })
+        .eq('round_id', currentRound.id)
+        .eq('user_id', currentUser.id);
+      error = result.error;
+    } else {
+      // Inserisci un nuovo voto
+      const result = await supabase
+        .from('k_votes')
+        .insert({ round_id: currentRound.id, user_id: currentUser.id, song_id: String(songId) });
+      error = result.error;
+    }
+
     if (error) {
       console.error('Errore voto', error);
       setRoundMessage('Errore nel registrare il voto. Controlla la connessione.');
