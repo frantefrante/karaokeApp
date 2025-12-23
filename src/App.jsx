@@ -648,6 +648,18 @@ function WinnerSongSelection({ winner, songs, onSelectSong, currentUser }) {
             <Music className="w-16 h-16 text-blue-500 mx-auto" />
           </div>
         </div>
+
+        {/* Debug info per admin */}
+        {!currentUser && (
+          <div className="mt-8">
+            <p className="text-sm text-gray-500">
+              Admin: Stai visualizzando la schermata di attesa. Solo {winner.name} può scegliere il brano.
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              Vincitore ID: {winner.id} | CurrentUser: {currentUser ? currentUser.id : 'null'}
+            </p>
+          </div>
+        )}
       </div>
     );
   }
@@ -1542,16 +1554,23 @@ export default function KaraokeApp() {
   };
 
   const handleSongSelected = async (song) => {
+    console.log('🎵 Canzone selezionata:', song.title);
     if (backendMode === 'supabase' && currentRound?.id) {
       const payload = {
         ...currentRound,
         state: 'song_selected',
         selectedSong: song
       };
-      await supabase
+      console.log('📤 Aggiornamento round a song_selected in Supabase...');
+      const { error } = await supabase
         .from('k_rounds')
         .update({ state: 'song_selected', payload })
         .eq('id', currentRound.id);
+      if (error) {
+        console.error('❌ Errore aggiornamento round:', error);
+      } else {
+        console.log('✅ Round aggiornato con successo');
+      }
     }
     setCurrentRound(prev => prev ? { ...prev, state: 'song_selected', selectedSong: song } : prev);
   };
