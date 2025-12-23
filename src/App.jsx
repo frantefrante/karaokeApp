@@ -1269,8 +1269,13 @@ export default function KaraokeApp() {
 
     // Se non c'è un round attivo
     if (!currentRound) {
-      // Permetti di restare in home, join, participantHome, waiting
-      if (view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home') {
+      // Se ci sono risultati da mostrare, permetti di restare in display
+      if (roundResults && view === 'display') {
+        console.log('📊 Mostrando risultati, resto in display');
+        return;
+      }
+      // Altrimenti, permetti di restare in home, join, participantHome, waiting
+      if (view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home' && view !== 'display') {
         console.log('🔄 Auto-redirect a waiting (nessun round)');
         setView('waiting');
       }
@@ -1310,7 +1315,7 @@ export default function KaraokeApp() {
         setView('display');
       }
     }
-  }, [currentRound, currentUser, view]);
+  }, [currentRound, currentUser, view, roundResults]);
 
   const handleUserJoin = (name, photo) => {
     if (currentUser?.id) {
