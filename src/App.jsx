@@ -1375,6 +1375,16 @@ export default function KaraokeApp() {
     }
   };
 
+  const handleResetCurrentUser = () => {
+    // Cancella il profilo locale e permette di creare un nuovo account
+    setCurrentUser(null);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(CURRENT_USER_KEY);
+    }
+    registeredOnceRef.current = false;
+    setView('join');
+  };
+
   const handleSongFileChange = (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -2106,6 +2116,23 @@ export default function KaraokeApp() {
           <div className="bg-white rounded-2xl shadow-2xl p-8">
             <h2 className="text-3xl font-bold mb-4 text-center text-gray-800">Area Partecipante</h2>
             <p className="text-center text-gray-600 mb-6">Scegli cosa vuoi fare o registrati.</p>
+
+            {currentUser && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 flex items-center gap-4">
+                <img src={currentUser.photo} alt={currentUser.name} className="w-16 h-16 rounded-full border-2 border-blue-400" />
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">Utente corrente:</p>
+                  <p className="text-lg text-blue-600">{currentUser.name}</p>
+                </div>
+                <button
+                  onClick={handleResetCurrentUser}
+                  className="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 font-semibold text-sm"
+                >
+                  Cambia Account
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-col md:flex-row gap-4 mb-6">
               <button
                 onClick={() => (currentUser ? setView('waiting') : setView('join'))}
@@ -3272,7 +3299,7 @@ export default function KaraokeApp() {
                   <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
                     <button
                       onClick={() => {
-                        const text = `${roundResults.winner.title} - ${roundResults.winner.artist}`;
+                        const text = roundResults.winner.title;
                         navigator.clipboard.writeText(text);
                         alert('📋 Titolo copiato negli appunti!\n\n' + text);
                       }}
@@ -3282,9 +3309,9 @@ export default function KaraokeApp() {
                     </button>
                     <button
                       onClick={() => {
-                        // Apre SongBook Pro con deep link
+                        // Apre SongBook Pro con deep link usando location.href per evitare blocchi popup
                         const searchQuery = encodeURIComponent(roundResults.winner.title);
-                        window.open(`songbook://search?query=${searchQuery}`, '_blank');
+                        window.location.href = `songbook://search?query=${searchQuery}`;
                       }}
                       className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold"
                     >
