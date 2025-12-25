@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ChordSheetJS from 'chordsheetjs';
-import { Music, Plus, Minus, X, Youtube, ExternalLink } from 'lucide-react';
+import { Music, Plus, Minus, X, Youtube, Maximize2, Minimize2, Play, Pause, Download, RotateCcw } from 'lucide-react';
 
 // Icona Spotify personalizzata (lucide-react non ha Spotify)
 const SpotifyIcon = ({ className }) => (
@@ -12,6 +12,37 @@ const SpotifyIcon = ({ className }) => (
 export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
   const [transpose, setTranspose] = useState(0);
   const [fontSize, setFontSize] = useState(16);
+  const [autoScroll, setAutoScroll] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const contentRef = useRef(null);
+  const scrollIntervalRef = useRef(null);
+
+  // Auto-scroll effect
+  useEffect(() => {
+    if (autoScroll && contentRef.current) {
+      scrollIntervalRef.current = setInterval(() => {
+        const container = contentRef.current.querySelector('.overflow-y-auto');
+        if (container) {
+          container.scrollBy({
+            top: scrollSpeed,
+            behavior: 'auto'
+          });
+        }
+      }, 50);
+    } else {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current);
+      }
+    }
+
+    return () => {
+      if (scrollIntervalRef.current) {
+        clearInterval(scrollIntervalRef.current);
+      }
+    };
+  }, [autoScroll, scrollSpeed]);
 
   // Parse e formatta lo spartito
   const formattedSheet = useMemo(() => {
@@ -51,6 +82,32 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
     setFontSize(prev => Math.max(prev - 2, 12));
   };
 
+  // Fullscreen toggle
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      contentRef.current?.requestFullscreen().catch(err => {
+        console.error('Errore fullscreen:', err);
+      });
+      setIsFullscreen(true);
+    } else {
+      document.exitFullscreen();
+      setIsFullscreen(false);
+    }
+  };
+
+  // Print/PDF
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // Reset settings
+  const handleReset = () => {
+    setTranspose(0);
+    setFontSize(16);
+    setAutoScroll(false);
+    setScrollSpeed(1);
+  };
+
   // Funzione per cercare su Spotify
   const openSpotify = () => {
     const query = encodeURIComponent(`${song.title} ${song.artist}`);
@@ -64,7 +121,10 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div
+      ref={contentRef}
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+    >
       <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-300">
         {/* Header */}
         <div className="p-6 border-b border-gray-300">
@@ -125,6 +185,47 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
                 <Plus className="w-5 h-5 text-gray-600" />
               </button>
             </div>
+
+            {/* Auto-scroll */}
+            <button
+              onClick={() => setAutoScroll(!autoScroll)}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-all font-semibold ${
+                autoScroll
+                  ? 'bg-green-600 text-white shadow-lg'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+              title="Auto-scroll"
+            >
+              {autoScroll ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+              <span className="text-sm hidden sm:inline">Scroll</span>
+            </button>
+
+            {/* Fullscreen */}
+            <button
+              onClick={toggleFullscreen}
+              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors"
+              title="Schermo intero"
+            >
+              {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+            </button>
+
+            {/* Print */}
+            <button
+              onClick={handlePrint}
+              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors"
+              title="Stampa spartito"
+            >
+              <Download className="w-5 h-5" />
+            </button>
+
+            {/* Reset */}
+            <button
+              onClick={handleReset}
+              className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors"
+              title="Reset impostazioni"
+            >
+              <RotateCcw className="w-5 h-5" />
+            </button>
 
             {/* Playback links */}
             <div className="flex gap-2 ml-auto">
@@ -210,7 +311,7 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
           min-width: 3ch;
           padding-right: 0.3ch;
           position: relative;
-          top: -0.4em;
+          top: -1.2em;
           text-shadow: 0 1px 2px rgba(124, 58, 237, 0.1);
         }
 
@@ -287,7 +388,7 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
           }
 
           .chord-sheet-content .chord {
-            top: -0.3em;
+            top: -1em;
           }
         }
 

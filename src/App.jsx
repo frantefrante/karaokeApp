@@ -1125,7 +1125,7 @@ export default function KaraokeApp() {
       .select('*')
       .eq('round_id', currentRound.id)
       .eq('user_id', currentUser.id)
-      .single();
+      .maybeSingle();
 
     let error;
     if (existingVote) {
