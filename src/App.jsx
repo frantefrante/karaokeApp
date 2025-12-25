@@ -898,10 +898,7 @@ export default function KaraokeApp() {
   const [showQRCodes, setShowQRCodes] = useState(false);
   const [showWiFiConfig, setShowWiFiConfig] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState('');
-  const [adminSection, setAdminSection] = useState('dashboard'); // dashboard, songs, users, games
   const [songSearch, setSongSearch] = useState('');
-  const [editingSong, setEditingSong] = useState(null);
-  const [showAddSong, setShowAddSong] = useState(false);
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -1397,7 +1394,6 @@ export default function KaraokeApp() {
       setLibraryErrors(errors);
       if (songs.length > 0) {
         setSongLibrary(songs);
-        setLibraryPreview(songs.slice(0, 10));
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
         }
