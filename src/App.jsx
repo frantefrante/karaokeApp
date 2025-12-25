@@ -1166,6 +1166,29 @@ export default function KaraokeApp() {
       if (userErr) console.error('Errore fetch utenti', userErr);
       if (userData) setUsers(userData);
 
+      // libreria brani
+      const { data: songsData, error: songsErr } = await supabase.from('k_songs').select('*').order('title', { ascending: true });
+      if (songsErr) console.error('Errore fetch libreria', songsErr);
+      if (songsData && songsData.length > 0) {
+        setSongLibrary(songsData);
+        // Salva anche in localStorage come cache
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(songsData));
+        }
+      } else {
+        // Se non ci sono brani su Supabase, prova a caricare da localStorage
+        const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSongLibrary(parsed);
+            // Sincronizza localStorage con Supabase
+            console.log('📤 Sincronizzando libreria locale con Supabase...');
+            await syncLibraryToSupabase(parsed);
+          }
+        }
+      }
+
       // round attivo (non ended)
       const { data: roundData, error: roundErr } = await supabase
         .from('k_rounds')
@@ -1345,6 +1368,38 @@ export default function KaraokeApp() {
     }
   }, [currentRound, currentUser, view, roundResults]);
 
+  // Funzione helper per sincronizzare libreria locale con Supabase
+  const syncLibraryToSupabase = async (songs) => {
+    if (!supabase || songs.length === 0) return;
+
+    try {
+      // Inserisci tutti i brani (senza ID, lascia che Supabase generi gli ID)
+      const songsToInsert = songs.map(({ title, artist, year }) => ({
+        title,
+        artist,
+        year: year || null
+      }));
+
+      const { data, error } = await supabase
+        .from('k_songs')
+        .insert(songsToInsert)
+        .select();
+
+      if (error) {
+        console.error('❌ Errore sincronizzazione:', error);
+      } else {
+        console.log(`✅ ${data.length} brani sincronizzati con Supabase`);
+        // Aggiorna lo stato locale con gli ID di Supabase
+        setSongLibrary(data);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        }
+      }
+    } catch (err) {
+      console.error('❌ Errore sync:', err);
+    }
+  };
+
   const handleUserJoin = (name, photo) => {
     if (currentUser?.id) {
       setView('waiting');
@@ -1387,17 +1442,47 @@ export default function KaraokeApp() {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const text = e.target.result;
       const { songs, errors } = parseSongsFromCSV(text);
 
       setLibraryErrors(errors);
       if (songs.length > 0) {
-        setSongLibrary(songs);
-        if (typeof localStorage !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
+        // Salva su Supabase se configurato
+        if (backendMode === 'supabase' && supabase) {
+          setImportMessage('⏳ Caricamento in corso...');
+
+          try {
+            // Prima svuota la tabella esistente
+            const { error: deleteError } = await supabase
+              .from('k_songs')
+              .delete()
+              .neq('id', 0); // Trucco per eliminare tutti i record
+
+            if (deleteError) {
+              console.error('Errore eliminazione brani esistenti:', deleteError);
+            }
+
+            // Poi inserisci i nuovi
+            await syncLibraryToSupabase(songs);
+            setImportMessage(`✅ ${songs.length} brani caricati e sincronizzati!`);
+          } catch (err) {
+            console.error('Errore import:', err);
+            // Fallback: salva solo in locale
+            setSongLibrary(songs);
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
+            }
+            setImportMessage(`⚠️ ${songs.length} brani caricati in locale (errore sincronizzazione)`);
+          }
+        } else {
+          // Modalità locale
+          setSongLibrary(songs);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(songs));
+          }
+          setImportMessage(`Caricati ${songs.length} brani dalla libreria CSV.`);
         }
-        setImportMessage(`Caricati ${songs.length} brani dalla libreria CSV.`);
       } else {
         setImportMessage('');
       }
@@ -1508,32 +1593,81 @@ export default function KaraokeApp() {
     }
   };
 
-  const handleAddSong = (title, artist, year) => {
+  const handleAddSong = async (title, artist, year) => {
     if (!title || !artist) {
       alert('Titolo e artista sono obbligatori');
       return;
     }
-    const newSong = {
-      id: Date.now(),
-      title: title.trim(),
-      artist: artist.trim(),
-      year: year ? parseInt(year) : null
-    };
-    const updatedLibrary = [...songLibrary, newSong];
-    setSongLibrary(updatedLibrary);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+
+    if (backendMode === 'supabase' && supabase) {
+      // Salva su Supabase
+      const { data, error } = await supabase
+        .from('k_songs')
+        .insert({
+          title: title.trim(),
+          artist: artist.trim(),
+          year: year ? parseInt(year) : null
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Errore aggiunta brano:', error);
+        alert('Errore durante il salvataggio del brano');
+        return;
+      }
+
+      // Aggiorna stato locale
+      const updatedLibrary = [...songLibrary, data].sort((a, b) => a.title.localeCompare(b.title));
+      setSongLibrary(updatedLibrary);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+      }
+    } else {
+      // Modalità locale
+      const newSong = {
+        id: Date.now(),
+        title: title.trim(),
+        artist: artist.trim(),
+        year: year ? parseInt(year) : null
+      };
+      const updatedLibrary = [...songLibrary, newSong];
+      setSongLibrary(updatedLibrary);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+      }
     }
+
     setShowAddSongForm(false);
     setImportMessage(`Brano "${title}" aggiunto con successo!`);
     setTimeout(() => setImportMessage(''), 3000);
   };
 
-  const handleUpdateSong = (id, title, artist, year) => {
+  const handleUpdateSong = async (id, title, artist, year) => {
     if (!title || !artist) {
       alert('Titolo e artista sono obbligatori');
       return;
     }
+
+    if (backendMode === 'supabase' && supabase) {
+      // Aggiorna su Supabase
+      const { error } = await supabase
+        .from('k_songs')
+        .update({
+          title: title.trim(),
+          artist: artist.trim(),
+          year: year ? parseInt(year) : null
+        })
+        .eq('id', id);
+
+      if (error) {
+        console.error('Errore modifica brano:', error);
+        alert('Errore durante la modifica del brano');
+        return;
+      }
+    }
+
+    // Aggiorna stato locale
     const updatedLibrary = songLibrary.map(song =>
       song.id === id
         ? { ...song, title: title.trim(), artist: artist.trim(), year: year ? parseInt(year) : null }
@@ -1548,8 +1682,24 @@ export default function KaraokeApp() {
     setTimeout(() => setImportMessage(''), 3000);
   };
 
-  const handleDeleteSong = (id) => {
+  const handleDeleteSong = async (id) => {
     if (!confirm('Sei sicuro di voler eliminare questo brano?')) return;
+
+    if (backendMode === 'supabase' && supabase) {
+      // Elimina da Supabase
+      const { error } = await supabase
+        .from('k_songs')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Errore eliminazione brano:', error);
+        alert('Errore durante l\'eliminazione del brano');
+        return;
+      }
+    }
+
+    // Aggiorna stato locale
     const updatedLibrary = songLibrary.filter(song => song.id !== id);
     setSongLibrary(updatedLibrary);
     if (typeof localStorage !== 'undefined') {
