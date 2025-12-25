@@ -180,6 +180,8 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
           font-family: 'Courier New', 'Courier', monospace;
           line-height: 2;
           color: #1f2937;
+          max-width: 100%;
+          overflow-x: auto;
         }
 
         /* Metadati (titolo, artista) */
@@ -199,20 +201,23 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
 
-        /* Accordi - colore viola prominente */
+        /* Accordi - colore viola prominente, posizionati SOPRA il testo */
         .chord-sheet-content .chord {
           color: #7c3aed;
           font-weight: 700;
+          display: inline-block;
           font-size: 0.95em;
           min-width: 3ch;
-          padding-right: 0.5ch;
+          padding-right: 0.3ch;
           position: relative;
           top: -0.4em;
+          text-shadow: 0 1px 2px rgba(124, 58, 237, 0.1);
         }
 
         /* Testo/Lyrics */
         .chord-sheet-content .lyrics {
           color: #111827;
+          display: inline;
           line-height: 1.8;
         }
 
@@ -225,11 +230,14 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
 
         /* Paragrafi/Sezioni */
         .chord-sheet-content .paragraph {
-          margin-bottom: 1.5em;
-          padding: 1em;
+          margin-bottom: 1.8em;
+          padding: 1.2em;
           background: linear-gradient(to right, #f9fafb 0%, #ffffff 100%);
-          border-left: 3px solid #e5e7eb;
+          border-left: 4px solid #e5e7eb;
           border-radius: 0.5rem;
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
 
         /* Etichette sezioni (Verse, Chorus, Bridge) */
@@ -280,6 +288,34 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
 
           .chord-sheet-content .chord {
             top: -0.3em;
+          }
+        }
+
+        /* Stampa */
+        @media print {
+          .chord-sheet-content {
+            background: white !important;
+            font-size: 11pt;
+          }
+
+          .chord-sheet-content .chord {
+            color: #000 !important;
+            text-shadow: none !important;
+          }
+
+          .chord-sheet-content .lyrics {
+            color: #000 !important;
+          }
+
+          .chord-sheet-content .label {
+            color: #000 !important;
+            border-bottom-color: #999 !important;
+          }
+
+          .chord-sheet-content .paragraph {
+            background: white !important;
+            box-shadow: none !important;
+            border-left-color: #ccc !important;
           }
         }
       `}</style>
