@@ -135,6 +135,54 @@ const parseSongsFromCSV = (text) => {
   return { songs, errors };
 };
 
+// Parser per file ChordPro (.cho)
+const parseChordProFile = (filename, content) => {
+  const lines = content.split(/\r?\n/);
+  let title = null;
+  let artist = null;
+  let year = null;
+
+  // Estrai metadati dalle direttive ChordPro
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // Cerca {title: ...} o {t: ...}
+    const titleMatch = trimmed.match(/^\{(?:title|t):\s*(.+?)\}$/i);
+    if (titleMatch && !title) {
+      title = titleMatch[1].trim();
+    }
+
+    // Cerca {artist: ...} o {subtitle: ...} o {st: ...}
+    const artistMatch = trimmed.match(/^\{(?:artist|subtitle|st):\s*(.+?)\}$/i);
+    if (artistMatch && !artist) {
+      artist = artistMatch[1].trim();
+    }
+
+    // Cerca {year: ...}
+    const yearMatch = trimmed.match(/^\{year:\s*(\d+)\}$/i);
+    if (yearMatch && !year) {
+      year = parseInt(yearMatch[1], 10);
+    }
+  }
+
+  // Se non troviamo metadati, usa il nome del file
+  if (!title) {
+    // Rimuovi estensione .cho e usa come titolo
+    title = filename.replace(/\.cho$/i, '');
+  }
+
+  if (!artist) {
+    artist = 'Artista sconosciuto';
+  }
+
+  return {
+    title,
+    artist,
+    year,
+    chord_sheet: content
+  };
+};
+
 // ============================================================================
 // COMPONENTI UI
 // ============================================================================
@@ -874,6 +922,7 @@ export default function KaraokeApp() {
   const [roundMessage, setRoundMessage] = useState('');
   const [votesReceived, setVotesReceived] = useState(0);
   const fileInputRef = useRef(null);
+  const choFilesInputRef = useRef(null);
   const votesChannelRef = useRef(null);
   const registeredOnceRef = useRef(false);
   const [backendMode, setBackendMode] = useState(isSupabaseConfigured ? 'supabase' : 'mock');
@@ -1497,6 +1546,95 @@ export default function KaraokeApp() {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleChoFilesChange = async (event) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    setImportMessage(`⏳ Importazione di ${files.length} file ChordPro in corso...`);
+    setLibraryErrors([]);
+
+    const parsedSongs = [];
+    const errors = [];
+
+    // Leggi tutti i file
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+
+      try {
+        const content = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target.result);
+          reader.onerror = () => reject(new Error(`Errore lettura file ${file.name}`));
+          reader.readAsText(file, 'UTF-8');
+        });
+
+        const parsed = parseChordProFile(file.name, content);
+        parsedSongs.push(parsed);
+      } catch (err) {
+        errors.push(`${file.name}: ${err.message}`);
+      }
+    }
+
+    setLibraryErrors(errors);
+
+    if (parsedSongs.length > 0) {
+      // Salva su Supabase se configurato
+      if (backendMode === 'supabase' && supabase) {
+        try {
+          // Prepara i dati per l'inserimento
+          const songsToInsert = parsedSongs.map(({ title, artist, year, chord_sheet }) => ({
+            title,
+            artist,
+            year: year || null,
+            chord_sheet
+          }));
+
+          // Inserisci tutti i brani (senza svuotare la libreria esistente)
+          const { data, error } = await supabase
+            .from('k_songs')
+            .insert(songsToInsert)
+            .select();
+
+          if (error) {
+            console.error('Errore inserimento brani:', error);
+            throw error;
+          }
+
+          // Aggiorna la libreria locale con i nuovi brani
+          const updatedLibrary = [...songLibrary, ...data].sort((a, b) =>
+            a.title.localeCompare(b.title)
+          );
+          setSongLibrary(updatedLibrary);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+          }
+
+          setImportMessage(`✅ ${parsedSongs.length} brani ChordPro importati con successo!`);
+        } catch (err) {
+          console.error('Errore import ChordPro:', err);
+          setImportMessage(`⚠️ Errore durante l'importazione su Supabase`);
+        }
+      } else {
+        // Modalità locale
+        const updatedLibrary = [...songLibrary, ...parsedSongs].sort((a, b) =>
+          a.title.localeCompare(b.title)
+        );
+        setSongLibrary(updatedLibrary);
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+        }
+        setImportMessage(`✅ ${parsedSongs.length} brani ChordPro importati in locale!`);
+      }
+    }
+
+    // Reset input
+    if (choFilesInputRef.current) {
+      choFilesInputRef.current.value = '';
+    }
+
+    setTimeout(() => setImportMessage(''), 5000);
   };
 
   const handlePreparePoll = () => {
@@ -2575,12 +2713,27 @@ export default function KaraokeApp() {
                 className="hidden"
                 onChange={handleSongFileChange}
               />
+              <input
+                ref={choFilesInputRef}
+                type="file"
+                accept=".cho"
+                multiple
+                className="hidden"
+                onChange={handleChoFilesChange}
+              />
               <button
                 onClick={() => fileInputRef.current?.click()}
                 className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-semibold"
               >
                 <Upload className="w-5 h-5" />
                 Importa CSV
+              </button>
+              <button
+                onClick={() => choFilesInputRef.current?.click()}
+                className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 font-semibold"
+              >
+                <Music className="w-5 h-5" />
+                Importa ChordPro (.cho)
               </button>
               <button
                 onClick={() => setShowAddSongForm(!showAddSongForm)}
