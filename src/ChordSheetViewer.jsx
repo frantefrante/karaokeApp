@@ -19,18 +19,16 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
 
     try {
       const parser = new ChordSheetJS.ChordProParser();
-      const chordSheet = parser.parse(song.chord_sheet);
+      let chordSheet = parser.parse(song.chord_sheet);
 
       // Trasponi se necessario
-      let transposedSheet = chordSheet;
       if (transpose !== 0) {
-        const transposer = new ChordSheetJS.ChordSheetSerializer();
-        transposedSheet = chordSheet.transpose(transpose);
+        chordSheet = chordSheet.transpose(transpose);
       }
 
-      // Formatta in HTML
-      const formatter = new ChordSheetJS.HtmlTableFormatter();
-      return formatter.format(transposedSheet);
+      // USA HtmlDivFormatter per un rendering migliore
+      const formatter = new ChordSheetJS.HtmlDivFormatter();
+      return formatter.format(chordSheet);
     } catch (error) {
       console.error('Errore parsing ChordPro:', error);
       return null;
@@ -176,42 +174,113 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
         </div>
       </div>
 
-      {/* Stili per ChordSheet */}
+      {/* Stili per ChordSheet con HtmlDivFormatter */}
       <style>{`
         .chord-sheet-content {
-          font-family: 'Courier New', monospace;
-          line-height: 1.8;
+          font-family: 'Courier New', 'Courier', monospace;
+          line-height: 2;
           color: #1f2937;
         }
 
-        .chord-sheet-content table {
-          border-collapse: collapse;
-          width: 100%;
-        }
-
-        .chord-sheet-content .chord {
-          color: #dc2626;
+        /* Metadati (titolo, artista) */
+        .chord-sheet-content .title {
+          font-size: 1.5em;
           font-weight: bold;
-          font-size: 1.1em;
-          padding-right: 0.5em;
-        }
-
-        .chord-sheet-content .lyrics {
-          color: #1f2937;
-        }
-
-        .chord-sheet-content .comment {
-          color: #6b7280;
-          font-style: italic;
-        }
-
-        .chord-sheet-content .row {
+          color: #111827;
           margin-bottom: 0.5em;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         }
 
+        .chord-sheet-content .subtitle,
+        .chord-sheet-content .artist {
+          font-size: 1.1em;
+          color: #6b7280;
+          margin-bottom: 0.3em;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        /* Accordi - colore viola prominente */
+        .chord-sheet-content .chord {
+          color: #7c3aed;
+          font-weight: 700;
+          font-size: 0.95em;
+          min-width: 3ch;
+          padding-right: 0.5ch;
+          position: relative;
+          top: -0.4em;
+        }
+
+        /* Testo/Lyrics */
+        .chord-sheet-content .lyrics {
+          color: #111827;
+          line-height: 1.8;
+        }
+
+        /* Righe */
+        .chord-sheet-content .row {
+          display: block;
+          margin-bottom: 0.5em;
+          min-height: 1.5em;
+        }
+
+        /* Paragrafi/Sezioni */
+        .chord-sheet-content .paragraph {
+          margin-bottom: 1.5em;
+          padding: 1em;
+          background: linear-gradient(to right, #f9fafb 0%, #ffffff 100%);
+          border-left: 3px solid #e5e7eb;
+          border-radius: 0.5rem;
+        }
+
+        /* Etichette sezioni (Verse, Chorus, Bridge) */
+        .chord-sheet-content .label {
+          font-weight: 800;
+          color: #dc2626;
+          display: block;
+          margin: 1.5em 0 0.8em 0;
+          text-transform: uppercase;
+          font-size: 0.85em;
+          letter-spacing: 0.1em;
+          padding-bottom: 0.3em;
+          border-bottom: 2px solid #fca5a5;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+
+        /* Commenti */
+        .chord-sheet-content .comment {
+          color: #059669;
+          font-style: italic;
+          display: block;
+          margin: 1em 0;
+          padding: 0.6em 1em;
+          background: #ecfdf5;
+          border-left: 3px solid #10b981;
+          border-radius: 0.375rem;
+          font-size: 0.95em;
+        }
+
+        /* Colonne (se presenti) */
         .chord-sheet-content .column {
+          display: inline-block;
           vertical-align: top;
-          padding-right: 1em;
+          margin-right: 2em;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+          .chord-sheet-content {
+            font-size: 14px;
+            line-height: 1.6;
+          }
+
+          .chord-sheet-content .paragraph {
+            padding: 0.8em;
+            margin-bottom: 1.2em;
+          }
+
+          .chord-sheet-content .chord {
+            top: -0.3em;
+          }
         }
       `}</style>
     </div>

@@ -2902,16 +2902,17 @@ export default function KaraokeApp() {
                               </p>
                               <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
                               {song.chord_sheet && (
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    console.log('Opening song:', song.title, 'Has chord_sheet:', !!song.chord_sheet);
                                     setViewingSong(song);
                                   }}
-                                  className="text-sm text-amber-600 hover:text-amber-800 font-semibold"
+                                  className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
                                 >
-                                  Apri
+                                  📄 Apri
                                 </button>
                               )}
                               <button
