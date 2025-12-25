@@ -2906,6 +2906,14 @@ export default function KaraokeApp() {
                               <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
                             </div>
                             <div className="flex gap-2">
+                              {song.chord_sheet && (
+                                <button
+                                  onClick={() => setViewingSong(song)}
+                                  className="text-sm text-amber-600 hover:text-amber-800 font-semibold"
+                                >
+                                  Apri
+                                </button>
+                              )}
                               <button
                                 onClick={() => setEditingSongId(song.id)}
                                 className="text-sm text-blue-600 hover:text-blue-800"
@@ -3653,7 +3661,7 @@ export default function KaraokeApp() {
                     )}
                   </div>
 
-                  {/* Pulsanti integrazione SongBook Pro */}
+                  {/* Pulsanti azioni */}
                   <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
                     <button
                       onClick={() => {
@@ -3665,16 +3673,14 @@ export default function KaraokeApp() {
                     >
                       📋 Copia Titolo
                     </button>
-                    <button
-                      onClick={() => {
-                        // Apre SongBook Pro con deep link usando location.href per evitare blocchi popup
-                        const searchQuery = encodeURIComponent(roundResults.winner.title);
-                        window.location.href = `songbook://search?query=${searchQuery}`;
-                      }}
-                      className="flex items-center gap-2 bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 font-semibold"
-                    >
-                      📖 Apri in SongBook Pro
-                    </button>
+                    {roundResults.winner.chord_sheet && (
+                      <button
+                        onClick={() => setViewingSong(roundResults.winner)}
+                        className="flex items-center gap-2 bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 font-semibold"
+                      >
+                        📄 Apri Testo
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

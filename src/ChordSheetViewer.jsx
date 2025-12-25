@@ -67,18 +67,18 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900/95 backdrop-blur-xl rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-700">
+      <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col border border-gray-300">
         {/* Header */}
-        <div className="p-6 border-b border-gray-700">
+        <div className="p-6 border-b border-gray-300">
           <div className="flex items-start justify-between mb-4">
             <div className="flex-1">
-              <h2 className="text-3xl font-bold text-amber-400 mb-1">{song.title}</h2>
-              <p className="text-xl text-gray-300">{song.artist}</p>
+              <h2 className="text-3xl font-bold text-gray-900 mb-1">{song.title}</h2>
+              <p className="text-xl text-gray-700">{song.artist}</p>
               {song.year && <p className="text-sm text-gray-500">Anno: {song.year}</p>}
             </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-600 hover:text-gray-900 transition-colors"
             >
               <X className="w-8 h-8" />
             </button>
@@ -87,71 +87,52 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
           {/* Toolbar */}
           <div className="flex flex-wrap gap-3 items-center">
             {/* Trasposizione */}
-            <div className="flex items-center gap-2 bg-gray-800 rounded-xl p-2">
+            <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-2 border border-gray-300">
               <button
                 onClick={handleTransposeDown}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
                 title="Trasponi giù"
               >
-                <Minus className="w-5 h-5 text-blue-400" />
+                <Minus className="w-5 h-5 text-blue-600" />
               </button>
-              <span className="text-white font-bold px-3 min-w-[80px] text-center">
+              <span className="text-gray-900 font-bold px-3 min-w-[80px] text-center">
                 {transpose > 0 ? `+${transpose}` : transpose === 0 ? 'Originale' : transpose}
               </span>
               <button
                 onClick={handleTransposeUp}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
                 title="Trasponi su"
               >
-                <Plus className="w-5 h-5 text-blue-400" />
+                <Plus className="w-5 h-5 text-blue-600" />
               </button>
             </div>
 
             {/* Dimensione font */}
-            <div className="flex items-center gap-2 bg-gray-800 rounded-xl p-2">
+            <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-2 border border-gray-300">
               <button
                 onClick={handleFontSizeDown}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
                 title="Riduci testo"
               >
-                <Minus className="w-5 h-5 text-gray-400" />
+                <Minus className="w-5 h-5 text-gray-600" />
               </button>
-              <span className="text-white font-bold px-3 min-w-[60px] text-center">
+              <span className="text-gray-900 font-bold px-3 min-w-[60px] text-center">
                 {fontSize}px
               </span>
               <button
                 onClick={handleFontSizeUp}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
                 title="Ingrandisci testo"
               >
-                <Plus className="w-5 h-5 text-gray-400" />
+                <Plus className="w-5 h-5 text-gray-600" />
               </button>
             </div>
 
-            {/* Playback links */}
-            <div className="flex gap-2 ml-auto">
-              <button
-                onClick={openSpotify}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl transition-colors font-semibold"
-                title="Apri su Spotify"
-              >
-                <SpotifyIcon className="w-5 h-5" />
-                Spotify
-              </button>
-              <button
-                onClick={openYouTube}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl transition-colors font-semibold"
-                title="Apri su YouTube"
-              >
-                <Youtube className="w-5 h-5" />
-                YouTube
-              </button>
-            </div>
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 bg-white">
           {formattedSheet ? (
             <div
               className="chord-sheet-content"
@@ -159,15 +140,15 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
               dangerouslySetInnerHTML={{ __html: formattedSheet }}
             />
           ) : song.chord_sheet ? (
-            <div className="text-center text-gray-400 py-12">
+            <div className="text-center text-gray-600 py-12">
               <Music className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p>Errore nel parsing dello spartito</p>
-              <pre className="mt-4 text-left text-xs bg-gray-800 p-4 rounded-lg overflow-auto max-h-60">
+              <pre className="mt-4 text-left text-xs bg-gray-100 p-4 rounded-lg overflow-auto max-h-60 border border-gray-300">
                 {song.chord_sheet}
               </pre>
             </div>
           ) : (
-            <div className="text-center text-gray-400 py-12">
+            <div className="text-center text-gray-600 py-12">
               <Music className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg mb-2">Nessuno spartito disponibile</p>
               <p className="text-sm">Importa un file ChordPro per visualizzare gli accordi</p>
@@ -180,7 +161,8 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
       <style>{`
         .chord-sheet-content {
           font-family: 'Courier New', monospace;
-          line-height: 1.6;
+          line-height: 1.8;
+          color: #1f2937;
         }
 
         .chord-sheet-content table {
@@ -189,18 +171,18 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
         }
 
         .chord-sheet-content .chord {
-          color: #fbbf24;
+          color: #dc2626;
           font-weight: bold;
           font-size: 1.1em;
           padding-right: 0.5em;
         }
 
         .chord-sheet-content .lyrics {
-          color: #e5e7eb;
+          color: #1f2937;
         }
 
         .chord-sheet-content .comment {
-          color: #9ca3af;
+          color: #6b7280;
           font-style: italic;
         }
 
