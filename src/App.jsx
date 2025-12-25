@@ -954,6 +954,7 @@ export default function KaraokeApp() {
   const [songSearch, setSongSearch] = useState('');
   const [viewingSong, setViewingSong] = useState(null);
   const [adminViewMode, setAdminViewMode] = useState('compact'); // 'compact' or 'extended'
+  const [compactSection, setCompactSection] = useState(null); // 'users', 'songs', 'round' in compact mode
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -2386,12 +2387,17 @@ export default function KaraokeApp() {
       : (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173');
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-purple-600 to-pink-600 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center p-4">
+        <div className="bg-gray-800/50 backdrop-blur-xl border border-purple-500/30 rounded-3xl shadow-2xl p-8 max-w-md w-full">
           <div className="text-center mb-8">
-            <Mic className="w-20 h-20 mx-auto mb-4 text-purple-600" />
-            <h1 className="text-4xl font-bold text-gray-800 mb-2">Karaoke Night</h1>
-            <p className="text-gray-600">Sistema Interattivo per Serate Musicali</p>
+            <div className="relative">
+              <div className="absolute inset-0 bg-gradient-to-r from-purple-600 to-pink-600 blur-3xl opacity-50"></div>
+              <Mic className="w-20 h-20 mx-auto mb-4 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 relative" style={{filter: 'drop-shadow(0 0 20px rgba(168, 85, 247, 0.5))'}} />
+            </div>
+            <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
+              🎤 Karaoke Night
+            </h1>
+            <p className="text-gray-300 text-lg">Sistema Interattivo per Serate Musicali</p>
           </div>
 
           <div className="space-y-3 mb-6">
@@ -2499,7 +2505,7 @@ export default function KaraokeApp() {
                 if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'false');
                 setView('participantHome');
               }}
-              className="w-full bg-blue-600 text-white py-4 rounded-lg hover:bg-blue-700 flex items-center justify-center gap-3 text-lg font-semibold"
+              className="group relative w-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-4 rounded-xl hover:from-blue-700 hover:to-cyan-700 flex items-center justify-center gap-3 text-lg font-bold shadow-lg hover:shadow-xl transition-all hover:scale-105"
             >
               <Users className="w-6 h-6" />
               Accedi come Partecipante
@@ -2511,7 +2517,7 @@ export default function KaraokeApp() {
                 if (typeof localStorage !== 'undefined') localStorage.setItem(ADMIN_MODE_KEY, 'true');
                 setView('admin');
               }}
-              className="w-full bg-green-600 text-white py-4 rounded-lg hover:bg-green-700 flex items-center justify-center gap-3 text-lg font-semibold"
+              className="group relative w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 rounded-xl hover:from-purple-700 hover:to-pink-700 flex items-center justify-center gap-3 text-lg font-bold shadow-lg hover:shadow-xl transition-all hover:scale-105"
             >
               <Play className="w-6 h-6" />
               Pannello Organizzatore
@@ -2519,15 +2525,20 @@ export default function KaraokeApp() {
 
             <button
               onClick={() => setView('display')}
-              className="w-full bg-purple-600 text-white py-4 rounded-lg hover:bg-purple-700 flex items-center justify-center gap-3 text-lg font-semibold"
+              className="group relative w-full bg-gradient-to-r from-amber-600 to-orange-600 text-white py-4 rounded-xl hover:from-amber-700 hover:to-orange-700 flex items-center justify-center gap-3 text-lg font-bold shadow-lg hover:shadow-xl transition-all hover:scale-105"
             >
               <Trophy className="w-6 h-6" />
               Schermo Principale (display)
             </button>
           </div>
 
-          <div className="mt-8 text-center text-sm text-gray-500">
-            <p>Utenti connessi: {users.length}</p>
+          <div className="mt-8 text-center">
+            <div className="inline-flex items-center gap-2 bg-gray-700/50 border border-gray-600 rounded-full px-4 py-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+              <p className="text-sm text-gray-300">
+                <span className="font-bold text-white">{users.length}</span> utenti connessi
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -2803,28 +2814,199 @@ export default function KaraokeApp() {
             </div>
           </div>
 
-          {/* Stats Cards - Solo in modalità compatta */}
-          {adminViewMode === 'compact' && (
+          {/* Stats Cards - Solo in modalità compatta (cliccabili) */}
+          {adminViewMode === 'compact' && !compactSection && (
             <div className="grid grid-cols-3 gap-6 mb-8">
-              {/* Card Partecipanti */}
-              <div className="bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-blue-500/30 rounded-2xl p-6 text-center backdrop-blur-xl">
+              {/* Card Partecipanti - Cliccabile */}
+              <button
+                onClick={() => setCompactSection('users')}
+                className="bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-blue-500/30 hover:border-blue-400 rounded-2xl p-6 text-center backdrop-blur-xl transition-all hover:scale-105 cursor-pointer"
+              >
                 <Users className="w-12 h-12 text-blue-400 mx-auto mb-3" />
                 <p className="text-5xl font-bold text-white mb-2">{users.length}</p>
                 <p className="text-gray-300 font-semibold">Partecipanti</p>
-              </div>
+                <p className="text-xs text-blue-300 mt-2">👆 Clicca per gestire</p>
+              </button>
 
-              {/* Card Brani */}
-              <div className="bg-gradient-to-br from-purple-500/20 to-pink-600/20 border border-purple-500/30 rounded-2xl p-6 text-center backdrop-blur-xl">
+              {/* Card Brani - Cliccabile */}
+              <button
+                onClick={() => setCompactSection('songs')}
+                className="bg-gradient-to-br from-purple-500/20 to-pink-600/20 border border-purple-500/30 hover:border-purple-400 rounded-2xl p-6 text-center backdrop-blur-xl transition-all hover:scale-105 cursor-pointer"
+              >
                 <Music className="w-12 h-12 text-purple-400 mx-auto mb-3" />
                 <p className="text-5xl font-bold text-white mb-2">{songLibrary.length}</p>
                 <p className="text-gray-300 font-semibold">Brani</p>
-              </div>
+                <p className="text-xs text-purple-300 mt-2">👆 Clicca per gestire</p>
+              </button>
 
-              {/* Card Round Attivo */}
-              <div className="bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 rounded-2xl p-6 text-center backdrop-blur-xl">
+              {/* Card Round Attivo - Cliccabile */}
+              <button
+                onClick={() => currentRound && setCompactSection('round')}
+                disabled={!currentRound}
+                className={`bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 rounded-2xl p-6 text-center backdrop-blur-xl transition-all ${
+                  currentRound ? 'hover:border-amber-400 hover:scale-105 cursor-pointer' : 'opacity-50 cursor-not-allowed'
+                }`}
+              >
                 <Trophy className="w-12 h-12 text-amber-400 mx-auto mb-3" />
                 <p className="text-5xl font-bold text-white mb-2">{currentRound ? '✓' : '—'}</p>
                 <p className="text-gray-300 font-semibold">{currentRound ? 'Round Attivo' : 'Nessun Round'}</p>
+                {currentRound && <p className="text-xs text-amber-300 mt-2">👆 Clicca per gestire</p>}
+              </button>
+            </div>
+          )}
+
+          {/* Sezione Compatta Espansa - Partecipanti */}
+          {adminViewMode === 'compact' && compactSection === 'users' && (
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Users className="w-7 h-7 text-blue-400" />
+                  Gestione Partecipanti
+                </h3>
+                <button
+                  onClick={() => setCompactSection(null)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ✕ Chiudi
+                </button>
+              </div>
+              <div className="flex gap-2 flex-wrap mb-4">
+                {users.map(user => (
+                  <div key={user.id} className="flex items-center gap-2 bg-gray-700/50 px-3 py-2 rounded-full border border-gray-600 hover:border-blue-400 transition-all">
+                    <img src={user.photo} alt={user.name} className="w-8 h-8 rounded-full" />
+                    <span className="text-sm font-semibold text-white">{user.name}</span>
+                    <button
+                      onClick={() => handleRemoveUser(user.id)}
+                      className="text-xs text-red-400 hover:text-red-300 ml-1"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+                {users.length === 0 && (
+                  <p className="text-sm text-gray-400">Nessun partecipante registrato</p>
+                )}
+              </div>
+              <button
+                onClick={handleResetParticipants}
+                className="mt-4 text-sm text-red-400 hover:text-red-300 font-semibold"
+              >
+                Reset tutti i partecipanti
+              </button>
+            </div>
+          )}
+
+          {/* Sezione Compatta Espansa - Brani */}
+          {adminViewMode === 'compact' && compactSection === 'songs' && (
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Music className="w-7 h-7 text-purple-400" />
+                  Libreria Brani
+                </h3>
+                <button
+                  onClick={() => setCompactSection(null)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ✕ Chiudi
+                </button>
+              </div>
+
+              {/* Barra di ricerca */}
+              <input
+                type="text"
+                placeholder="🔍 Cerca brani..."
+                value={songSearch}
+                onChange={(e) => setSongSearch(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl bg-gray-700/50 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 mb-4"
+              />
+
+              {/* Lista brani con scroll */}
+              <div className="max-h-96 overflow-y-auto space-y-2">
+                {songLibrary
+                  .filter(song =>
+                    song.title.toLowerCase().includes(songSearch.toLowerCase()) ||
+                    song.artist.toLowerCase().includes(songSearch.toLowerCase())
+                  )
+                  .map(song => (
+                    <div key={song.id} className="bg-gray-700/50 rounded-xl p-4 border border-gray-600 hover:border-purple-400 transition-all">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <p className="font-bold text-white flex items-center gap-2">
+                            {song.title}
+                            {song.chord_sheet && <Music className="w-4 h-4 text-amber-400" />}
+                          </p>
+                          <p className="text-sm text-gray-300">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          {song.chord_sheet && (
+                            <button
+                              onClick={() => setViewingSong(song)}
+                              className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
+                            >
+                              📄 Apri
+                            </button>
+                          )}
+                          <button
+                            onClick={() => setEditingSongId(song.id)}
+                            className="text-sm text-blue-400 hover:text-blue-300"
+                          >
+                            Modifica
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSong(song.id)}
+                            className="text-sm text-red-400 hover:text-red-300"
+                          >
+                            Elimina
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sezione Compatta Espansa - Round Attivo */}
+          {adminViewMode === 'compact' && compactSection === 'round' && currentRound && (
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Trophy className="w-7 h-7 text-amber-400" />
+                  Round Attivo
+                </h3>
+                <button
+                  onClick={() => setCompactSection(null)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ✕ Chiudi
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600">
+                  <p className="text-sm text-gray-400 mb-1">Tipo Round</p>
+                  <p className="text-xl font-bold text-white capitalize">{currentRound.type || 'Poll'}</p>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600">
+                  <p className="text-sm text-gray-400 mb-1">Stato</p>
+                  <p className="text-xl font-bold text-white">
+                    {currentRound.votingOpen ? '🟢 Votazione Aperta' : '🔴 Votazione Chiusa'}
+                  </p>
+                </div>
+
+                <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600">
+                  <p className="text-sm text-gray-400 mb-1">Brani nel Round</p>
+                  <p className="text-xl font-bold text-white">{currentRound.songs?.length || 0}</p>
+                </div>
+
+                <button
+                  onClick={handleResetRound}
+                  className="w-full bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+                >
+                  🔄 Reset Round
+                </button>
               </div>
             </div>
           )}
