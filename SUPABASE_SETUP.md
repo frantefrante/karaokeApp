@@ -1,12 +1,20 @@
-# Setup Sincronizzazione Libreria Brani con Supabase
+# Setup Sincronizzazione con Supabase
 
 ## Panoramica
 
-La libreria brani è ora sincronizzata tramite Supabase, permettendo a tutti i dispositivi di vedere la stessa libreria in tempo reale.
+L'applicazione karaoke è ora completamente sincronizzata tramite Supabase, permettendo a tutti i dispositivi di:
+- Vedere la stessa libreria brani in tempo reale
+- Partecipare ai giochi (sondaggi, ruota, duetti, etc.)
+- Votare e vedere i risultati in tempo reale
+- Registrarsi come partecipanti
 
 ## Setup Iniziale
 
-### 1. Esegui la Migrazione SQL
+### 1. Esegui le Migrazioni SQL
+
+Devi eseguire DUE migrazioni SQL nel tuo progetto Supabase:
+
+#### Migrazione 1: Libreria Brani
 
 1. Vai su https://supabase.com/dashboard
 2. Seleziona il tuo progetto
@@ -15,16 +23,35 @@ La libreria brani è ora sincronizzata tramite Supabase, permettendo a tutti i d
 5. Copia e incolla il contenuto del file `supabase_migrations/create_k_songs.sql`
 6. Clicca **Run** per eseguire
 
-La migrazione creerà:
+Questa migrazione crea:
 - Tabella `k_songs` con campi: id, title, artist, year, chord_sheet, created_at, updated_at
 - Indici per ricerca veloce
 - Policy RLS per accesso pubblico
 - Trigger per aggiornamento automatico di `updated_at`
 
-### 2. Verifica Creazione Tabella
+#### Migrazione 2: Sistema di Gioco
+
+1. Nel **SQL Editor** di Supabase
+2. Clicca **New query**
+3. Copia e incolla il contenuto del file `supabase_migrations/create_game_tables.sql`
+4. Clicca **Run** per eseguire
+
+Questa migrazione crea:
+- Tabella `k_users`: utenti/partecipanti registrati
+- Tabella `k_rounds`: turni di gioco (sondaggi, ruota, etc.)
+- Tabella `k_votes`: voti degli utenti per i brani
+- Indici per query veloci
+- Policy RLS per accesso pubblico
+- Trigger per timestamp automatici
+
+### 2. Verifica Creazione Tabelle
 
 1. Nel dashboard Supabase, vai in **Table Editor**
-2. Dovresti vedere la tabella `k_songs`
+2. Dovresti vedere queste 4 tabelle:
+   - `k_songs` (libreria brani)
+   - `k_users` (partecipanti)
+   - `k_rounds` (turni di gioco)
+   - `k_votes` (voti)
 3. Verifica che le colonne siano corrette
 
 ## Come Funziona
