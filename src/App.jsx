@@ -908,6 +908,9 @@ function UserJoinView({ onJoin, onBack }) {
 // ============================================================================
 
 export default function KaraokeApp() {
+  // Rileva se siamo in modalità display/proiezione
+  const isDisplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('display') === 'true';
+
   const [view, setView] = useState('home');
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -950,6 +953,7 @@ export default function KaraokeApp() {
   const [adminLoginError, setAdminLoginError] = useState('');
   const [songSearch, setSongSearch] = useState('');
   const [viewingSong, setViewingSong] = useState(null);
+  const [adminViewMode, setAdminViewMode] = useState('compact'); // 'compact' or 'extended'
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -2248,6 +2252,134 @@ export default function KaraokeApp() {
     }
   };
 
+  // ============================================================================
+  // VISTA DISPLAY/PROIEZIONE
+  // ============================================================================
+  if (isDisplayMode) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center p-8">
+        <div className="max-w-7xl w-full">
+          {/* Header */}
+          <div className="text-center mb-12">
+            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-4">
+              🎤 Karaoke Night 🎶
+            </h1>
+            <p className="text-2xl text-gray-300">Modalità Proiezione</p>
+          </div>
+
+          {/* Round Attivo / Risultati */}
+          {currentRound && currentRound.votingOpen && (
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-8 border border-purple-500/30">
+              <h2 className="text-4xl font-bold text-amber-400 mb-6 text-center">
+                🗳️ Votazione in Corso
+              </h2>
+              <div className="grid grid-cols-2 gap-6">
+                {currentRound.songs?.map((song, idx) => (
+                  <div
+                    key={song.id}
+                    className="bg-gray-700/50 rounded-2xl p-6 border border-gray-600 hover:border-purple-400 transition-all"
+                  >
+                    <div className="text-3xl font-bold text-white mb-2">{song.title}</div>
+                    <div className="text-xl text-gray-300">{song.artist}</div>
+                    {song.year && <div className="text-sm text-gray-400 mt-2">Anno: {song.year}</div>}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-8 text-center">
+                <div className="inline-flex items-center gap-3 bg-green-600/20 border border-green-500/50 rounded-xl px-6 py-4">
+                  <Users className="w-8 h-8 text-green-400" />
+                  <span className="text-3xl font-bold text-white">{votesReceived}</span>
+                  <span className="text-xl text-gray-300">voti ricevuti</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Risultati */}
+          {roundResults && (
+            <div className="space-y-8">
+              {roundResults.winner ? (
+                <div className="bg-gradient-to-br from-amber-500/20 to-yellow-500/20 backdrop-blur-xl rounded-3xl p-12 border-4 border-amber-400">
+                  <div className="text-center">
+                    <Trophy className="w-32 h-32 mx-auto mb-6 text-amber-400" />
+                    <h2 className="text-5xl font-black text-amber-400 mb-4">🏆 VINCITORE 🏆</h2>
+                    <div
+                      className={roundResults.winner.chord_sheet ? "cursor-pointer hover:scale-105 transition-transform" : ""}
+                      onClick={() => roundResults.winner.chord_sheet && setViewingSong(roundResults.winner)}
+                    >
+                      <p className="text-6xl font-bold text-white mb-4">{roundResults.winner.title}</p>
+                      <p className="text-4xl text-gray-200 mb-2">{roundResults.winner.artist}</p>
+                      {roundResults.winner.chord_sheet && (
+                        <p className="text-xl text-amber-300 animate-pulse mt-4">📄 Clicca per vedere lo spartito</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : roundResults.tiedSongs?.length > 0 ? (
+                <div className="bg-gradient-to-br from-orange-500/20 to-red-500/20 backdrop-blur-xl rounded-3xl p-12 border-4 border-orange-400">
+                  <h2 className="text-5xl font-black text-orange-400 mb-8 text-center">⚖️ PAREGGIO!</h2>
+                  <div className="grid grid-cols-2 gap-6">
+                    {roundResults.tiedSongs.map(song => (
+                      <div key={song.id} className="bg-gray-800/50 rounded-2xl p-6 border-2 border-orange-400">
+                        <p className="text-4xl font-bold text-white mb-2">{song.title}</p>
+                        <p className="text-2xl text-gray-300">{song.artist}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Classifica */}
+              {roundResults.stats && roundResults.stats.length > 0 && (
+                <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-8 border border-gray-700">
+                  <h3 className="text-3xl font-bold text-purple-400 mb-6">📊 Classifica Completa</h3>
+                  <div className="space-y-4">
+                    {roundResults.stats.map((stat, i) => {
+                      const maxVotes = Math.max(...roundResults.stats.map(s => s.votes));
+                      const percent = maxVotes > 0 ? (stat.votes / maxVotes) * 100 : 0;
+                      return (
+                        <div key={`${stat.song.id}-${i}`} className="bg-gray-700/50 rounded-xl p-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="text-2xl font-bold text-white">{stat.song.title}</div>
+                            <div className="text-3xl font-bold text-amber-400">{stat.votes} 🎵</div>
+                          </div>
+                          <div className="text-lg text-gray-300 mb-2">{stat.song.artist}</div>
+                          <div className="h-3 bg-gray-600 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
+                              style={{ width: `${percent}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Stato Idle */}
+          {!currentRound && !roundResults && (
+            <div className="text-center">
+              <Music className="w-48 h-48 mx-auto mb-8 text-purple-400 opacity-50" />
+              <p className="text-4xl text-gray-400">In attesa del prossimo round...</p>
+            </div>
+          )}
+        </div>
+
+        {/* ChordSheetViewer per spartiti */}
+        {viewingSong && (
+          <ChordSheetViewer
+            song={viewingSong}
+            onClose={() => setViewingSong(null)}
+            onUpdateSong={() => {}}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (view === 'home') {
     const siteUrl = import.meta.env.VITE_SITE_URL
       ? import.meta.env.VITE_SITE_URL
@@ -2645,11 +2777,60 @@ export default function KaraokeApp() {
     const pollPrepared = currentRound && currentRound.type === 'poll';
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-800 to-gray-900 p-4">
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4">
         <div className="max-w-6xl mx-auto py-8">
-          <h2 className="text-4xl font-bold mb-8 text-white text-center">Pannello Organizzatore</h2>
+          {/* Header con toggle modalità */}
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-4xl font-bold text-amber-400">
+              {adminViewMode === 'compact' ? '🎯 Dashboard' : '🎛️ Pannello Organizzatore'}
+            </h2>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => window.open(`${window.location.origin}/?display=true`, '_blank', 'width=1920,height=1080')}
+                className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg"
+                title="Apri display per proiezione"
+              >
+                <Maximize2 className="w-5 h-5" />
+                🖥️ Apri Display
+              </button>
+              <button
+                onClick={() => setAdminViewMode(adminViewMode === 'compact' ? 'extended' : 'compact')}
+                className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white px-6 py-3 rounded-xl transition-all border border-gray-700"
+              >
+                <Eye className="w-5 h-5" />
+                {adminViewMode === 'compact' ? 'Estesa' : 'Compatta'}
+              </button>
+            </div>
+          </div>
 
-          {/* Card Utenti */}
+          {/* Stats Cards - Solo in modalità compatta */}
+          {adminViewMode === 'compact' && (
+            <div className="grid grid-cols-3 gap-6 mb-8">
+              {/* Card Partecipanti */}
+              <div className="bg-gradient-to-br from-blue-500/20 to-purple-600/20 border border-blue-500/30 rounded-2xl p-6 text-center backdrop-blur-xl">
+                <Users className="w-12 h-12 text-blue-400 mx-auto mb-3" />
+                <p className="text-5xl font-bold text-white mb-2">{users.length}</p>
+                <p className="text-gray-300 font-semibold">Partecipanti</p>
+              </div>
+
+              {/* Card Brani */}
+              <div className="bg-gradient-to-br from-purple-500/20 to-pink-600/20 border border-purple-500/30 rounded-2xl p-6 text-center backdrop-blur-xl">
+                <Music className="w-12 h-12 text-purple-400 mx-auto mb-3" />
+                <p className="text-5xl font-bold text-white mb-2">{songLibrary.length}</p>
+                <p className="text-gray-300 font-semibold">Brani</p>
+              </div>
+
+              {/* Card Round Attivo */}
+              <div className="bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 rounded-2xl p-6 text-center backdrop-blur-xl">
+                <Trophy className="w-12 h-12 text-amber-400 mx-auto mb-3" />
+                <p className="text-5xl font-bold text-white mb-2">{currentRound ? '✓' : '—'}</p>
+                <p className="text-gray-300 font-semibold">{currentRound ? 'Round Attivo' : 'Nessun Round'}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Card Utenti - Solo in modalità estesa */}
+          {adminViewMode === 'extended' && (
           <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -2688,8 +2869,10 @@ export default function KaraokeApp() {
               Reset tutti i partecipanti
             </button>
           </div>
+          )}
 
-          {/* Card Brani */}
+          {/* Card Brani - Solo in modalità estesa */}
+          {adminViewMode === 'extended' && (
           <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -2940,8 +3123,9 @@ export default function KaraokeApp() {
               <p className="text-sm text-gray-500 text-center py-4">Nessun brano in libreria. Importa un CSV o aggiungi manualmente.</p>
             )}
           </div>
+          )}
 
-          {/* Card Modalità di Gioco */}
+          {/* Card Modalità di Gioco - Visibile in entrambe le modalità */}
           <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
             <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
               <Disc className="w-7 h-7 text-indigo-600" />

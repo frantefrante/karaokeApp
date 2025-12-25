@@ -247,6 +247,28 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
               </button>
             </div>
           </div>
+
+          {/* Scroll Speed Control (visible when autoscroll is active) */}
+          {autoScroll && (
+            <div className="mt-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                Velocità scroll: {scrollSpeed.toFixed(1)}x
+              </label>
+              <input
+                type="range"
+                min="0.5"
+                max="5"
+                step="0.5"
+                value={scrollSpeed}
+                onChange={(e) => setScrollSpeed(parseFloat(e.target.value))}
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600"
+              />
+              <div className="flex justify-between text-xs text-gray-500 mt-1">
+                <span>Lento</span>
+                <span>Veloce</span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Content */}
