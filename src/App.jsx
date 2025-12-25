@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { Camera, Music, Users, Play, Trophy, Disc, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye } from 'lucide-react';
+import ChordSheetViewer from './ChordSheetViewer';
 
 const STORAGE_KEY = 'karaoke_songs';
 const CURRENT_USER_KEY = 'karaoke_current_user';
@@ -899,6 +900,7 @@ export default function KaraokeApp() {
   const [showWiFiConfig, setShowWiFiConfig] = useState(false);
   const [adminLoginError, setAdminLoginError] = useState('');
   const [songSearch, setSongSearch] = useState('');
+  const [viewingSong, setViewingSong] = useState(null);
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -1593,7 +1595,7 @@ export default function KaraokeApp() {
     }
   };
 
-  const handleAddSong = async (title, artist, year) => {
+  const handleAddSong = async (title, artist, year, chordSheet = null) => {
     if (!title || !artist) {
       alert('Titolo e artista sono obbligatori');
       return;
@@ -1606,7 +1608,8 @@ export default function KaraokeApp() {
         .insert({
           title: title.trim(),
           artist: artist.trim(),
-          year: year ? parseInt(year) : null
+          year: year ? parseInt(year) : null,
+          chord_sheet: chordSheet || null
         })
         .select()
         .single();
@@ -1629,7 +1632,8 @@ export default function KaraokeApp() {
         id: Date.now(),
         title: title.trim(),
         artist: artist.trim(),
-        year: year ? parseInt(year) : null
+        year: year ? parseInt(year) : null,
+        chord_sheet: chordSheet || null
       };
       const updatedLibrary = [...songLibrary, newSong];
       setSongLibrary(updatedLibrary);
@@ -1643,7 +1647,7 @@ export default function KaraokeApp() {
     setTimeout(() => setImportMessage(''), 3000);
   };
 
-  const handleUpdateSong = async (id, title, artist, year) => {
+  const handleUpdateSong = async (id, title, artist, year, chordSheet = undefined) => {
     if (!title || !artist) {
       alert('Titolo e artista sono obbligatori');
       return;
@@ -1651,13 +1655,18 @@ export default function KaraokeApp() {
 
     if (backendMode === 'supabase' && supabase) {
       // Aggiorna su Supabase
+      const updateData = {
+        title: title.trim(),
+        artist: artist.trim(),
+        year: year ? parseInt(year) : null
+      };
+      if (chordSheet !== undefined) {
+        updateData.chord_sheet = chordSheet;
+      }
+
       const { error } = await supabase
         .from('k_songs')
-        .update({
-          title: title.trim(),
-          artist: artist.trim(),
-          year: year ? parseInt(year) : null
-        })
+        .update(updateData)
         .eq('id', id);
 
       if (error) {
@@ -1668,11 +1677,21 @@ export default function KaraokeApp() {
     }
 
     // Aggiorna stato locale
-    const updatedLibrary = songLibrary.map(song =>
-      song.id === id
-        ? { ...song, title: title.trim(), artist: artist.trim(), year: year ? parseInt(year) : null }
-        : song
-    );
+    const updatedLibrary = songLibrary.map(song => {
+      if (song.id === id) {
+        const updated = {
+          ...song,
+          title: title.trim(),
+          artist: artist.trim(),
+          year: year ? parseInt(year) : null
+        };
+        if (chordSheet !== undefined) {
+          updated.chord_sheet = chordSheet;
+        }
+        return updated;
+      }
+      return song;
+    });
     setSongLibrary(updatedLibrary);
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
@@ -2600,7 +2619,8 @@ export default function KaraokeApp() {
                   handleAddSong(
                     formData.get('title'),
                     formData.get('artist'),
-                    formData.get('year')
+                    formData.get('year'),
+                    formData.get('chord_sheet') || null
                   );
                   e.target.reset();
                 }}>
@@ -2623,6 +2643,17 @@ export default function KaraokeApp() {
                       type="number"
                       className="px-3 py-2 border border-gray-300 rounded-lg"
                     />
+                  </div>
+                  <div className="mb-3">
+                    <textarea
+                      name="chord_sheet"
+                      placeholder="Spartito ChordPro (opzionale) - Incolla qui il contenuto in formato ChordPro"
+                      rows="6"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                    />
+                    <p className="text-xs text-gray-600 mt-1">
+                      Formato ChordPro: usa [Am], [C], [G] per gli accordi e {'{'}title: Titolo{'}'}, {'{'}artist: Artista{'}'} per i metadati
+                    </p>
                   </div>
                   <button
                     type="submit"
@@ -2711,8 +2742,14 @@ export default function KaraokeApp() {
                           </form>
                         ) : (
                           <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-bold text-gray-800">{song.title}</p>
+                            <div
+                              className="flex-1 cursor-pointer hover:bg-gray-100 p-2 rounded transition-colors"
+                              onClick={() => setViewingSong(song)}
+                            >
+                              <p className="font-bold text-gray-800 flex items-center gap-2">
+                                {song.title}
+                                {song.chord_sheet && <Music className="w-4 h-4 text-amber-500" />}
+                              </p>
                               <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
                             </div>
                             <div className="flex gap-2">
@@ -3487,6 +3524,36 @@ export default function KaraokeApp() {
             ← Torna alla Home
           </button>
         </div>
+
+        {/* ChordSheetViewer Modal */}
+        {viewingSong && (
+          <ChordSheetViewer
+            song={viewingSong}
+            onClose={() => setViewingSong(null)}
+            onUpdateSong={async (updatedSong) => {
+              if (backendMode === 'supabase' && supabase) {
+                const { error } = await supabase
+                  .from('k_songs')
+                  .update({ chord_sheet: updatedSong.chord_sheet })
+                  .eq('id', updatedSong.id);
+
+                if (error) {
+                  console.error('Errore aggiornamento spartito:', error);
+                  return;
+                }
+              }
+
+              const updatedLibrary = songLibrary.map(s =>
+                s.id === updatedSong.id ? { ...s, chord_sheet: updatedSong.chord_sheet } : s
+              );
+              setSongLibrary(updatedLibrary);
+              if (typeof localStorage !== 'undefined') {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+              }
+              setViewingSong(updatedSong);
+            }}
+          />
+        )}
       </div>
     );
   }
