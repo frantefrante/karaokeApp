@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
-import { Camera, Music, Users, Play, Trophy, Disc, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye } from 'lucide-react';
+import { Camera, Music, Users, Play, Trophy, Disc, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye, Maximize2 } from 'lucide-react';
 import ChordSheetViewer from './ChordSheetViewer';
 
 const STORAGE_KEY = 'karaoke_songs';
