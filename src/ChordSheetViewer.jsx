@@ -128,6 +128,25 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
               </button>
             </div>
 
+            {/* Playback links */}
+            <div className="flex gap-2 ml-auto">
+              <button
+                onClick={openSpotify}
+                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl transition-colors font-semibold"
+                title="Apri su Spotify"
+              >
+                <SpotifyIcon className="w-5 h-5" />
+                Spotify
+              </button>
+              <button
+                onClick={openYouTube}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl transition-colors font-semibold"
+                title="Apri su YouTube"
+              >
+                <Youtube className="w-5 h-5" />
+                YouTube
+              </button>
+            </div>
           </div>
         </div>
 

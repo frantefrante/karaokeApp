@@ -2895,10 +2895,7 @@ export default function KaraokeApp() {
                           </form>
                         ) : (
                           <div className="flex items-center justify-between">
-                            <div
-                              className="flex-1 cursor-pointer hover:bg-gray-100 p-2 rounded transition-colors"
-                              onClick={() => setViewingSong(song)}
-                            >
+                            <div className="flex-1 p-2">
                               <p className="font-bold text-gray-800 flex items-center gap-2">
                                 {song.title}
                                 {song.chord_sheet && <Music className="w-4 h-4 text-amber-500" />}
@@ -2908,7 +2905,10 @@ export default function KaraokeApp() {
                             <div className="flex gap-2">
                               {song.chord_sheet && (
                                 <button
-                                  onClick={() => setViewingSong(song)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setViewingSong(song);
+                                  }}
                                   className="text-sm text-amber-600 hover:text-amber-800 font-semibold"
                                 >
                                   Apri
