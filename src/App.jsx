@@ -3261,8 +3261,19 @@ export default function KaraokeApp() {
               {roundResults.winner && (
                 <div className="mb-4">
                   <p className="text-sm uppercase text-gray-500">Vincitore</p>
-                  <p className="text-3xl font-bold text-green-700">{roundResults.winner.title}</p>
-                  <p className="text-lg text-gray-600">{roundResults.winner.artist}</p>
+                  <div
+                    className={roundResults.winner.chord_sheet ? "cursor-pointer hover:bg-green-100 p-3 rounded-lg transition-colors" : ""}
+                    onClick={() => roundResults.winner.chord_sheet && setViewingSong(roundResults.winner)}
+                  >
+                    <p className="text-3xl font-bold text-green-700 flex items-center gap-2">
+                      {roundResults.winner.title}
+                      {roundResults.winner.chord_sheet && <Music className="w-6 h-6 text-amber-500" />}
+                    </p>
+                    <p className="text-lg text-gray-600">{roundResults.winner.artist}</p>
+                    {roundResults.winner.chord_sheet && (
+                      <p className="text-xs text-amber-600 mt-1">👆 Clicca per vedere lo spartito</p>
+                    )}
+                  </div>
                 </div>
               )}
               {roundResults.stats && <ResultList stats={roundResults.stats} compact />}
@@ -3628,8 +3639,19 @@ export default function KaraokeApp() {
               {roundResults.winner && (
                 <div className="mb-8">
                   <Music className="w-32 h-32 mx-auto mb-4 text-yellow-500" />
-                  <p className="text-3xl font-bold mb-2">{roundResults.winner.title}</p>
-                  <p className="text-xl text-gray-600">{roundResults.winner.artist}</p>
+                  <div
+                    className={roundResults.winner.chord_sheet ? "cursor-pointer hover:bg-yellow-50 p-4 rounded-xl transition-colors" : ""}
+                    onClick={() => roundResults.winner.chord_sheet && setViewingSong(roundResults.winner)}
+                  >
+                    <p className="text-3xl font-bold mb-2 flex items-center justify-center gap-2">
+                      {roundResults.winner.title}
+                      {roundResults.winner.chord_sheet && <Music className="w-8 h-8 text-amber-500" />}
+                    </p>
+                    <p className="text-xl text-gray-600">{roundResults.winner.artist}</p>
+                    {roundResults.winner.chord_sheet && (
+                      <p className="text-sm text-amber-600 mt-2">👆 Clicca per vedere lo spartito</p>
+                    )}
+                  </div>
 
                   {/* Pulsanti integrazione SongBook Pro */}
                   <div className="mt-6 flex flex-col sm:flex-row gap-3 justify-center">
