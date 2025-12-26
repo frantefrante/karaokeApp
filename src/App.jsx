@@ -1400,6 +1400,9 @@ export default function KaraokeApp() {
     const isAdminView = view === 'admin';
     const isParticipant = currentUser && !isAdminView;
 
+    // Non fare redirect se sei in projection view (è una view standalone)
+    if (view === 'projection') return;
+
     if (!isParticipant) return; // Non fare nulla se non sei un partecipante
 
     // Se non c'è un round attivo
@@ -1409,8 +1412,8 @@ export default function KaraokeApp() {
         console.log('📊 Mostrando risultati, resto in display');
         return;
       }
-      // Altrimenti, permetti di restare in home, join, participantHome, waiting
-      if (view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home' && view !== 'display') {
+      // Altrimenti, permetti di restare in home, join, participantHome, waiting, projection
+      if (view !== 'waiting' && view !== 'join' && view !== 'participantHome' && view !== 'home' && view !== 'display' && view !== 'projection') {
         console.log('🔄 Auto-redirect a waiting (nessun round)');
         setView('waiting');
       }
@@ -1418,8 +1421,8 @@ export default function KaraokeApp() {
     }
 
     // Gestisci i redirect in base al tipo di round
-    // IMPORTANTE: Non redirigere mai se l'utente è in 'home', 'join' o 'participantHome' (permetti sempre navigazione manuale)
-    if (view === 'home' || view === 'join' || view === 'participantHome') {
+    // IMPORTANTE: Non redirigere mai se l'utente è in 'home', 'join', 'participantHome' o 'projection' (permetti sempre navigazione manuale)
+    if (view === 'home' || view === 'join' || view === 'participantHome' || view === 'projection') {
       return; // Permetti all'utente di restare dove ha scelto di andare
     }
 
@@ -2362,7 +2365,13 @@ export default function KaraokeApp() {
           <div className="text-center text-white">
             <Music className="w-32 h-32 mx-auto mb-6 opacity-50 animate-pulse" />
             <p className="text-2xl">Caricamento libreria brani...</p>
-            <p className="text-sm text-gray-400 mt-4">Attendi qualche istante</p>
+            <p className="text-sm text-gray-400 mt-4">Attendi qualche istante mentre la libreria viene caricata dal database</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-8 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors"
+            >
+              🔄 Ricarica pagina
+            </button>
           </div>
         </div>
       );
@@ -2371,21 +2380,45 @@ export default function KaraokeApp() {
     if (projectionSong && projectionSong.chord_sheet) {
       return <ProjectionView song={projectionSong} />;
     } else {
+      // Brano non trovato o senza spartito
+      const songFound = songId ? songLibrary.find(s => s.id == songId) : null;
+
       return (
         <div className="min-h-screen bg-black flex items-center justify-center">
-          <div className="text-center text-white">
+          <div className="text-center text-white max-w-2xl mx-auto p-8">
             <Music className="w-32 h-32 mx-auto mb-6 opacity-50" />
-            <p className="text-2xl">Spartito non disponibile</p>
-            {songId && (
+            <p className="text-3xl font-bold mb-4">Spartito non disponibile</p>
+
+            {songFound ? (
               <>
-                <p className="text-sm text-gray-400 mt-4">Song ID richiesto: {songId}</p>
-                <p className="text-xs text-gray-500 mt-2">Tipo: {typeof songId}</p>
+                <p className="text-xl text-gray-300 mb-2">{songFound.title}</p>
+                <p className="text-lg text-gray-400 mb-6">{songFound.artist}</p>
+                <p className="text-gray-400 mb-8">
+                  Questo brano è presente nella libreria ma non ha ancora uno spartito ChordPro associato.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-gray-400 mb-4">
+                  {songId ? `Brano con ID ${songId} non trovato nella libreria` : 'Nessun ID brano specificato nell\'URL'}
+                </p>
+                <div className="bg-gray-900 rounded-xl p-4 mb-8 text-left text-sm">
+                  <p className="text-gray-500 mb-2">Debug info:</p>
+                  <p className="text-gray-400">• Libreria: {songLibrary.length} brani caricati</p>
+                  {songId && <p className="text-gray-400">• Song ID richiesto: {songId} (tipo: {typeof songId})</p>}
+                  {songLibrary.length > 0 && (
+                    <p className="text-gray-400">• Primo brano ID: {songLibrary[0]?.id} (tipo: {typeof songLibrary[0]?.id})</p>
+                  )}
+                </div>
               </>
             )}
-            <p className="text-sm text-gray-400 mt-2">Libreria: {songLibrary.length} brani caricati</p>
-            {songLibrary.length > 0 && (
-              <p className="text-xs text-gray-500 mt-2">Primo brano ID: {songLibrary[0]?.id} (tipo: {typeof songLibrary[0]?.id})</p>
-            )}
+
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors"
+            >
+              🔄 Ricarica pagina
+            </button>
           </div>
         </div>
       );
