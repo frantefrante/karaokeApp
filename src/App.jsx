@@ -3129,17 +3129,15 @@ export default function KaraokeApp() {
                 </button>
               </div>
 
-              {/* Barra di ricerca */}
-              <input
-                type="text"
-                placeholder="🔍 Cerca brani..."
-                value={songSearch}
-                onChange={(e) => setSongSearch(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-gray-700/50 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 mb-4"
-              />
-
-              {/* Pulsante Import ChordPro */}
-              <div className="mb-4">
+              {/* Barra di ricerca e Import */}
+              <div className="flex gap-2 mb-4">
+                <input
+                  type="text"
+                  placeholder="🔍 Cerca brani..."
+                  value={songSearch}
+                  onChange={(e) => setSongSearch(e.target.value)}
+                  className="flex-1 px-4 py-2 rounded-lg bg-gray-700/50 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                />
                 <input
                   ref={choFilesInputRef}
                   type="file"
@@ -3150,14 +3148,12 @@ export default function KaraokeApp() {
                 />
                 <button
                   onClick={() => choFilesInputRef.current?.click()}
-                  className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-semibold transition-all shadow-lg flex items-center justify-center gap-2"
+                  className="px-3 py-2 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-lg font-medium transition-all shadow-sm flex items-center gap-1.5 text-xs whitespace-nowrap"
+                  title="Importa spartiti ChordPro (.cho)"
                 >
-                  <Upload className="w-5 h-5" />
-                  📥 Importa Spartiti (.cho)
+                  <Upload className="w-3.5 h-3.5" />
+                  Importa
                 </button>
-                <p className="text-xs text-gray-400 mt-2 text-center">
-                  Seleziona uno o più file .cho (ChordPro) da importare
-                </p>
               </div>
 
               {/* Messaggio import */}
