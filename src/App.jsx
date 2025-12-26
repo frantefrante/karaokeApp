@@ -952,8 +952,7 @@ export default function KaraokeApp() {
   const [songSearch, setSongSearch] = useState('');
   const [viewingSong, setViewingSong] = useState(null);
   const [songViewContext, setSongViewContext] = useState(null); // 'admin', 'home', etc. - per sapere dove tornare quando si chiude lo spartito
-  const [adminViewMode, setAdminViewMode] = useState('compact'); // 'compact' or 'extended'
-  const [compactSection, setCompactSection] = useState(null); // 'users', 'songs', 'round' in compact mode
+  const [compactSection, setCompactSection] = useState(null); // 'users', 'songs', 'round'
   const [selectedGameMode, setSelectedGameMode] = useState(null); // 'poll', 'duet', 'wheel', 'band_picks', 'pass_mic'
 
   // Pulisci compactSection quando viene selezionata una modalità di gioco
@@ -2991,32 +2990,23 @@ export default function KaraokeApp() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 p-4">
         <div className="max-w-6xl mx-auto py-8">
-          {/* Header con toggle modalità */}
+          {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-4xl font-bold text-amber-400">
-              {adminViewMode === 'compact' ? '🎯 Dashboard' : '🎛️ Pannello Organizzatore'}
+              🎯 Dashboard
             </h2>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=display`, '_blank', 'width=1920,height=1080')}
-                className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg"
-                title="Apri display per proiezione"
-              >
-                <Maximize2 className="w-5 h-5" />
-                🖥️ Apri Display
-              </button>
-              <button
-                onClick={() => setAdminViewMode(adminViewMode === 'compact' ? 'extended' : 'compact')}
-                className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white px-6 py-3 rounded-xl transition-all border border-gray-700"
-              >
-                <Eye className="w-5 h-5" />
-                {adminViewMode === 'compact' ? 'Estesa' : 'Compatta'}
-              </button>
-            </div>
+            <button
+              onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=display`, '_blank', 'width=1920,height=1080')}
+              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg"
+              title="Apri display per proiezione"
+            >
+              <Maximize2 className="w-5 h-5" />
+              🖥️ Apri Display
+            </button>
           </div>
 
-          {/* Stats Cards - Solo in modalità compatta (cliccabili) - Visibili solo se non c'è una modalità di gioco selezionata */}
-          {adminViewMode === 'compact' && !compactSection && !selectedGameMode && (
+          {/* Stats Cards (cliccabili) - Visibili solo se non c'è una modalità di gioco selezionata */}
+          {!compactSection && !selectedGameMode && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
               {/* Card Partecipanti - Cliccabile */}
               <button
@@ -3071,8 +3061,8 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* Sezione Compatta Espansa - Partecipanti */}
-          {adminViewMode === 'compact' && compactSection === 'users' && (
+          {/* Sezione Espansa - Partecipanti */}
+          {compactSection === 'users' && (
             <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -3112,8 +3102,8 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* Sezione Compatta Espansa - Brani */}
-          {adminViewMode === 'compact' && compactSection === 'songs' && (
+          {/* Sezione Espansa - Brani */}
+          {compactSection === 'songs' && (
             <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -3281,8 +3271,8 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* Sezione Compatta Espansa - Scelti dalla Band */}
-          {adminViewMode === 'compact' && compactSection === 'band_picks' && (
+          {/* Sezione Espansa - Scelti dalla Band */}
+          {compactSection === 'band_picks' && (
             <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -3417,8 +3407,8 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* Sezione Compatta Espansa - Round Attivo */}
-          {adminViewMode === 'compact' && compactSection === 'round' && currentRound && (
+          {/* Sezione Espansa - Round Attivo */}
+          {compactSection === 'round' && currentRound && (
             <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -3461,51 +3451,8 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* Card Utenti - Solo in modalità estesa */}
-          {adminViewMode === 'extended' && !selectedGameMode && (
-          <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                  <Users className="w-7 h-7 text-blue-600" />
-                  Partecipanti
-                </h3>
-                <p className="text-sm text-gray-600 mt-1">Gestisci i partecipanti registrati</p>
-              </div>
-              <div className="text-right">
-                <p className="text-4xl font-bold text-blue-600">{users.length}</p>
-                <p className="text-xs text-gray-500 uppercase">Totale</p>
-              </div>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              {users.map(user => (
-                <div key={user.id} className="flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-full border border-gray-200 hover:border-blue-400 transition-all">
-                  <img src={user.photo} alt={user.name} className="w-8 h-8 rounded-full" />
-                  <span className="text-sm font-semibold">{user.name}</span>
-                  <button
-                    onClick={() => handleRemoveUser(user.id)}
-                    className="text-xs text-red-600 hover:text-red-800 ml-1"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-              {users.length === 0 && (
-                <p className="text-sm text-gray-500">Nessun partecipante registrato</p>
-              )}
-            </div>
-            <button
-              onClick={handleResetParticipants}
-              className="mt-4 text-sm text-red-600 hover:text-red-700 font-semibold"
-            >
-              Reset tutti i partecipanti
-            </button>
-          </div>
-          )}
-
-
-          {/* Modalità di Gioco - Schermata principale (visibile in modalità compatta quando non c'è sezione espansa) */}
-          {adminViewMode === 'compact' && !compactSection && !selectedGameMode && (
+          {/* Modalità di Gioco - Schermata principale */}
+          {!compactSection && !selectedGameMode && (
             <div className="space-y-6">
               <div className="text-center mb-6">
                 <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
@@ -4264,151 +4211,6 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* Card Scelti dalla Band - Solo in modalità estesa */}
-          {adminViewMode === 'extended' && !selectedGameMode && (
-          <div className="bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-200 rounded-2xl shadow-2xl p-6 mb-6">
-            <h3 className="text-2xl font-bold text-red-900 mb-4 flex items-center gap-2">
-              <Music className="w-7 h-7" />
-              Scelti dalla Band
-            </h3>
-            <p className="text-sm text-gray-700 mb-4">
-              Crea una scaletta personalizzata. I brani verranno mostrati uno alla volta nell'ordine scelto.
-            </p>
-
-            {/* Lista brani scelti */}
-            {bandPicksList.length > 0 && (
-              <div className="mb-4">
-                <h4 className="font-semibold text-red-800 mb-2">Scaletta ({bandPicksList.length} brani)</h4>
-                <div className="bg-white rounded-lg p-3 max-h-60 overflow-y-auto">
-                  {bandPicksList.map((song, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-2 hover:bg-gray-50 rounded border-b last:border-b-0"
-                    >
-                      <div className="flex items-center gap-3 flex-1">
-                        <span className="text-sm font-bold text-gray-500 w-6">{index + 1}.</span>
-                        <div className="flex-1">
-                          <p className="font-semibold text-gray-800">{song.title}</p>
-                          <p className="text-xs text-gray-600">{song.artist}</p>
-                        </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => {
-                            const newList = [...bandPicksList];
-                            if (index > 0) {
-                              [newList[index - 1], newList[index]] = [newList[index], newList[index - 1]];
-                              setBandPicksList(newList);
-                              localStorage.setItem('band_picks_list', JSON.stringify(newList));
-                            }
-                          }}
-                          disabled={index === 0}
-                          className="text-gray-600 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Sposta su"
-                        >
-                          ▲
-                        </button>
-                        <button
-                          onClick={() => {
-                            const newList = [...bandPicksList];
-                            if (index < bandPicksList.length - 1) {
-                              [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
-                              setBandPicksList(newList);
-                              localStorage.setItem('band_picks_list', JSON.stringify(newList));
-                            }
-                          }}
-                          disabled={index === bandPicksList.length - 1}
-                          className="text-gray-600 hover:text-gray-800 disabled:opacity-30 disabled:cursor-not-allowed"
-                          title="Sposta giù"
-                        >
-                          ▼
-                        </button>
-                        <button
-                          onClick={() => {
-                            const newList = bandPicksList.filter((_, i) => i !== index);
-                            setBandPicksList(newList);
-                            localStorage.setItem('band_picks_list', JSON.stringify(newList));
-                          }}
-                          className="text-red-600 hover:text-red-800 text-sm"
-                          title="Rimuovi"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Form aggiungi brano */}
-            <div className="mb-4">
-              <h4 className="font-semibold text-red-800 mb-2">Aggiungi brano alla scaletta</h4>
-              <div className="bg-white rounded-lg p-3">
-                <input
-                  type="text"
-                  placeholder="Cerca brano nella libreria..."
-                  value={songSearch}
-                  onChange={(e) => setSongSearch(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 text-sm"
-                />
-                <div className="max-h-60 overflow-y-auto space-y-1">
-                  {songLibrary
-                    .filter(s =>
-                      s.title.toLowerCase().includes(songSearch.toLowerCase()) ||
-                      s.artist.toLowerCase().includes(songSearch.toLowerCase())
-                    )
-                    .map(song => (
-                      <button
-                        key={song.id}
-                        onClick={() => {
-                          if (!bandPicksList.find(s => s.id === song.id)) {
-                            const newList = [...bandPicksList, song];
-                            setBandPicksList(newList);
-                            localStorage.setItem('band_picks_list', JSON.stringify(newList));
-                            setSongSearch('');
-                          }
-                        }}
-                        className="w-full text-left p-2 hover:bg-red-50 rounded text-sm border border-gray-200"
-                      >
-                        <p className="font-semibold text-gray-800">{song.title}</p>
-                        <p className="text-xs text-gray-600">{song.artist}</p>
-                      </button>
-                    ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Pulsanti azione */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  if (bandPicksList.length === 0) {
-                    alert('Aggiungi almeno un brano alla scaletta!');
-                    return;
-                  }
-                  handleStartRound('band_picks');
-                }}
-                disabled={bandPicksList.length === 0}
-                className="flex-1 bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Avvia Scaletta ({bandPicksList.length} brani)
-              </button>
-              <button
-                onClick={() => {
-                  if (confirm('Vuoi svuotare la scaletta?')) {
-                    setBandPicksList([]);
-                    setCurrentBandPickIndex(0);
-                    localStorage.removeItem('band_picks_list');
-                  }
-                }}
-                className="bg-gray-300 text-gray-700 px-6 py-3 rounded-lg hover:bg-gray-400 font-semibold"
-              >
-                Svuota
-              </button>
-            </div>
-          </div>
-          )}
 
           <button
             onClick={() => setView('home')}

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ChordSheetJS from 'chordsheetjs';
-import { Music, Plus, Minus, X, Youtube, Maximize2, Minimize2, Play, Pause, Download, RotateCcw } from 'lucide-react';
+import { Music, Plus, Minus, X, Youtube, Maximize2, Minimize2, Play, Pause, Download, RotateCcw, Edit3, Save } from 'lucide-react';
 
 // Icona Spotify personalizzata (lucide-react non ha Spotify)
 const SpotifyIcon = ({ className }) => (
@@ -15,6 +15,9 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editedChordSheet, setEditedChordSheet] = useState(song.chord_sheet);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   const contentRef = useRef(null);
   const scrollIntervalRef = useRef(null);
@@ -44,13 +47,14 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
     };
   }, [autoScroll, scrollSpeed]);
 
-  // Parse e formatta lo spartito
+  // Parse e formatta lo spartito (usa editedChordSheet se in modalità edit)
   const formattedSheet = useMemo(() => {
-    if (!song.chord_sheet) return null;
+    const sourceSheet = editedChordSheet || song.chord_sheet;
+    if (!sourceSheet) return null;
 
     try {
       const parser = new ChordSheetJS.ChordProParser();
-      let chordSheet = parser.parse(song.chord_sheet);
+      let chordSheet = parser.parse(sourceSheet);
 
       // Trasponi se necessario
       if (transpose !== 0) {
@@ -64,7 +68,7 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
       console.error('Errore parsing ChordPro:', error);
       return null;
     }
-  }, [song.chord_sheet, transpose]);
+  }, [editedChordSheet, song.chord_sheet, transpose]);
 
   const handleTransposeUp = () => {
     setTranspose(prev => (prev + 1) % 12);
@@ -118,6 +122,33 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
   const openYouTube = () => {
     const query = encodeURIComponent(`${song.title} ${song.artist}`);
     window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
+  };
+
+  // Attiva/disattiva modalità editing
+  const toggleEditMode = () => {
+    if (editMode && hasUnsavedChanges) {
+      if (!confirm('Hai modifiche non salvate. Vuoi uscire senza salvare?')) {
+        return;
+      }
+      setEditedChordSheet(song.chord_sheet);
+      setHasUnsavedChanges(false);
+    }
+    setEditMode(!editMode);
+  };
+
+  // Salva le modifiche
+  const handleSaveChanges = async () => {
+    if (onUpdateSong && editedChordSheet !== song.chord_sheet) {
+      await onUpdateSong(song.id, song.title, song.artist, song.year, editedChordSheet);
+      setHasUnsavedChanges(false);
+      setEditMode(false);
+    }
+  };
+
+  // Gestisce le modifiche nel textarea
+  const handleChordSheetChange = (e) => {
+    setEditedChordSheet(e.target.value);
+    setHasUnsavedChanges(e.target.value !== song.chord_sheet);
   };
 
   return (
@@ -227,6 +258,42 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
               <RotateCcw className="w-5 h-5" />
             </button>
 
+            {/* Edit/Save/Cancel */}
+            {editMode ? (
+              <>
+                <button
+                  onClick={toggleEditMode}
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors font-semibold"
+                  title="Annulla modifiche"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="text-sm hidden sm:inline">Annulla</span>
+                </button>
+                <button
+                  onClick={handleSaveChanges}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl transition-colors font-semibold ${
+                    hasUnsavedChanges
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  }`}
+                  disabled={!hasUnsavedChanges}
+                  title="Salva modifiche"
+                >
+                  <Save className="w-4 h-4" />
+                  <span className="text-sm hidden sm:inline">Salva</span>
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={toggleEditMode}
+                className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl transition-colors font-semibold"
+                title="Modifica accordi"
+              >
+                <Edit3 className="w-4 h-4" />
+                <span className="text-sm hidden sm:inline">Modifica</span>
+              </button>
+            )}
+
             {/* Playback links */}
             <div className="flex gap-2 ml-auto">
               <button
@@ -272,8 +339,29 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 bg-white">
-          {formattedSheet ? (
+        <div className={`flex-1 min-h-0 p-6 bg-white ${editMode ? 'flex flex-col' : 'overflow-y-auto'}`}>
+          {editMode ? (
+            /* Modalità editing: mostra textarea per modificare il ChordPro */
+            <>
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 mb-2 flex-shrink-0">
+                <p className="text-xs text-blue-700">
+                  <span className="font-semibold">✏️ Modalità Modifica:</span> Gli accordi vanno tra parentesi quadre, es: [Am], [G7], [C]
+                </p>
+                {hasUnsavedChanges && (
+                  <span className="text-xs text-yellow-700 font-semibold bg-yellow-100 px-2 py-1 rounded">
+                    ⚠️ Non salvato
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={editedChordSheet}
+                onChange={handleChordSheetChange}
+                className="flex-1 w-full p-4 font-mono text-sm border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 resize-none min-h-0"
+                placeholder="Inserisci qui lo spartito in formato ChordPro..."
+                spellCheck={false}
+              />
+            </>
+          ) : formattedSheet ? (
             <div
               className="chord-sheet-content"
               style={{ fontSize: `${fontSize}px` }}
