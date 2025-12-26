@@ -3,6 +3,7 @@ import { QRCodeCanvas } from 'qrcode.react';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { Camera, Music, Users, Play, Trophy, Disc, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye, Maximize2 } from 'lucide-react';
 import ChordSheetViewer from './ChordSheetViewer';
+import ProjectionView from './ProjectionView';
 
 const STORAGE_KEY = 'karaoke_songs';
 const CURRENT_USER_KEY = 'karaoke_current_user';
@@ -908,9 +909,6 @@ function UserJoinView({ onJoin, onBack }) {
 // ============================================================================
 
 export default function KaraokeApp() {
-  // Rileva se siamo in modalità display/proiezione
-  const isDisplayMode = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('display') === 'true';
-
   const [view, setView] = useState('home');
   const [currentUser, setCurrentUser] = useState(null);
   const [users, setUsers] = useState([]);
@@ -953,8 +951,28 @@ export default function KaraokeApp() {
   const [adminLoginError, setAdminLoginError] = useState('');
   const [songSearch, setSongSearch] = useState('');
   const [viewingSong, setViewingSong] = useState(null);
+  const [songViewContext, setSongViewContext] = useState(null); // 'admin', 'home', etc. - per sapere dove tornare quando si chiude lo spartito
   const [adminViewMode, setAdminViewMode] = useState('compact'); // 'compact' or 'extended'
   const [compactSection, setCompactSection] = useState(null); // 'users', 'songs', 'round' in compact mode
+  const [selectedGameMode, setSelectedGameMode] = useState(null); // 'poll', 'duet', 'wheel', 'band_picks', 'pass_mic'
+
+  // Pulisci compactSection quando viene selezionata una modalità di gioco
+  useEffect(() => {
+    if (selectedGameMode) {
+      setCompactSection(null);
+    }
+  }, [selectedGameMode]);
+
+  // Leggi il parametro 'view' dall'URL all'avvio
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const viewParam = params.get('view');
+      if (viewParam && ['home', 'admin', 'display', 'projection'].includes(viewParam)) {
+        setView(viewParam);
+      }
+    }
+  }, []);
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -1323,6 +1341,16 @@ export default function KaraokeApp() {
       .channel('rounds')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'k_rounds' }, (payload) => {
         console.log('📢 Round aggiornato:', payload.eventType, payload.new);
+
+        // Se il round è stato eliminato (DELETE), resetta semplicemente lo stato locale
+        if (payload.eventType === 'DELETE') {
+          console.log('🗑️ Round eliminato dal database, reset locale');
+          setCurrentRound(null);
+          setRoundResults(null);
+          setVotesReceived(0);
+          return;
+        }
+
         const r = payload.new;
         const payloadObj = r?.payload || {};
         const songs = payloadObj.songs || [];
@@ -1340,9 +1368,21 @@ export default function KaraokeApp() {
         console.log('✅ Round object:', { votingOpen: roundObj?.votingOpen, state: roundObj?.state });
 
         if (roundObj?.state === 'ended' && payloadObj.results) {
+          console.log('🏁 Round terminato. View corrente:', view, 'isAdminMode:', isAdminMode);
           setRoundResults(payloadObj.results);
           setCurrentRound(null);
-          setView('display');
+          // Non cambiare view se sei in modalità admin, mostra i risultati nella dashboard
+          // Solo i partecipanti vengono reindirizzati a display
+          if (!isAdminMode) {
+            console.log('➡️ Redirect a display (non sei admin)');
+            setView('display');
+          } else {
+            console.log('✅ Rimango in admin, mostro risultati nella dashboard');
+            // Se eri in home ma sei admin, torna ad admin
+            if (view !== 'admin') {
+              setView('admin');
+            }
+          }
         } else {
           setCurrentRound(roundObj);
         }
@@ -1709,7 +1749,7 @@ export default function KaraokeApp() {
         setCurrentRound(null);
         setVotesReceived(0);
         setRoundMessage('Votazione chiusa, risultati pronti.');
-        setView('display');
+        // Non cambiare view, mostra i risultati nella dashboard
       }
     }
   };
@@ -1890,11 +1930,14 @@ export default function KaraokeApp() {
     const selectedSongs = [...songLibrary].sort(() => Math.random() - 0.5).slice(0, 20);
 
     if (backendMode === 'supabase') {
+      // Rimuovi chord_sheet dai brani per ridurre la dimensione del payload
+      const songsLightweight = selectedSongs.map(({ id, title, artist, year }) => ({ id, title, artist, year }));
+
       const payload = {
         type: 'wheel',
         state: 'spinning',
         users: users,
-        songs: selectedSongs,
+        songs: songsLightweight,
         preselectedWinner: preselectedWinner,  // Vincitore già scelto!
         preselectedWinnerIndex: randomWinnerIndex,
         winner: null,
@@ -1912,7 +1955,6 @@ export default function KaraokeApp() {
       }
       setCurrentRound({ ...payload, id: data.id });
       setRoundMessage('Ruota della Fortuna avviata!');
-      setView('display');
     } else {
       const round = {
         id: Date.now(),
@@ -1928,7 +1970,6 @@ export default function KaraokeApp() {
       };
       setCurrentRound(round);
       setRoundMessage('Ruota della Fortuna avviata!');
-      setView('display');
     }
   };
 
@@ -1950,10 +1991,13 @@ export default function KaraokeApp() {
   const handleSongSelected = async (song) => {
     console.log('🎵 Canzone selezionata:', song.title);
     if (backendMode === 'supabase' && currentRound?.id) {
+      // Rimuovi chord_sheet per ridurre la dimensione del payload
+      const { chord_sheet, ...songWithoutChordSheet } = song;
+
       const payload = {
         ...currentRound,
         state: 'song_selected',
-        selectedSong: song
+        selectedSong: songWithoutChordSheet
       };
       console.log('📤 Aggiornamento round a song_selected in Supabase...');
       const { error } = await supabase
@@ -2247,136 +2291,260 @@ export default function KaraokeApp() {
     }
   };
 
-  const handleEndRound = () => {
-    if (currentRound?.type === 'poll') {
-      handleCloseVoting();
+  const handleEndRound = async () => {
+    if (!currentRound) {
+      console.log('⚠️ Nessun round da terminare');
+      return;
     }
+
+    console.log('🛑 Terminazione round:', currentRound.type, 'ID:', currentRound.id);
+
+    if (currentRound.type === 'poll') {
+      handleCloseVoting();
+      return;
+    }
+
+    // Per tutti gli altri tipi di round (wheel, duet, band_picks, pass_mic)
+    if (backendMode === 'supabase' && supabase) {
+      console.log('🗑️ Eliminazione round da Supabase...');
+      const { error } = await supabase
+        .from('k_rounds')
+        .delete()
+        .eq('id', currentRound.id);
+
+      if (error) {
+        console.error('❌ Errore terminazione round:', error);
+        setRoundMessage('Errore durante la terminazione del round');
+        return;
+      }
+      console.log('✅ Round eliminato da Supabase');
+    }
+
+    // Reset locale
+    console.log('🔄 Reset stato locale...');
+    setCurrentRound(null);
+    setSelectedGameMode(null); // Torna alla dashboard principale
+    setRoundMessage('Round terminato con successo!');
+    setTimeout(() => setRoundMessage(''), 3000);
+    console.log('✅ Terminazione completata');
   };
 
   // ============================================================================
-  // VISTA DISPLAY/PROIEZIONE
+  // VIEW PROJECTION - Proiezione spartiti con controlli avanzati
   // ============================================================================
-  if (isDisplayMode) {
+  if (view === 'projection') {
+    const params = new URLSearchParams(window.location.search);
+    const songIdParam = params.get('songId');
+
+    // Convert songId to correct type - could be string or number in DB
+    let songId = songIdParam;
+    if (songIdParam && !isNaN(songIdParam)) {
+      songId = parseInt(songIdParam, 10);
+    }
+
+    // Use == for type-coercive comparison (string "123" == number 123)
+    const projectionSong = songId ? songLibrary.find(s => s.id == songId) : null;
+
+    console.log('🎵 Projection View Debug:', {
+      songId,
+      songIdType: typeof songId,
+      songLibraryLength: songLibrary.length,
+      firstSongId: songLibrary[0]?.id,
+      firstSongIdType: typeof songLibrary[0]?.id,
+      projectionSong: projectionSong ? `${projectionSong.title} - ${projectionSong.artist}` : 'NOT FOUND',
+      hasChordSheet: projectionSong?.chord_sheet ? 'YES' : 'NO'
+    });
+
+    // Loading state - la libreria sta ancora caricando
+    if (songLibrary.length === 0) {
+      return (
+        <div className="min-h-screen bg-black flex items-center justify-center">
+          <div className="text-center text-white">
+            <Music className="w-32 h-32 mx-auto mb-6 opacity-50 animate-pulse" />
+            <p className="text-2xl">Caricamento libreria brani...</p>
+            <p className="text-sm text-gray-400 mt-4">Attendi qualche istante</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (projectionSong && projectionSong.chord_sheet) {
+      return <ProjectionView song={projectionSong} />;
+    } else {
+      return (
+        <div className="min-h-screen bg-black flex items-center justify-center">
+          <div className="text-center text-white">
+            <Music className="w-32 h-32 mx-auto mb-6 opacity-50" />
+            <p className="text-2xl">Spartito non disponibile</p>
+            {songId && (
+              <>
+                <p className="text-sm text-gray-400 mt-4">Song ID richiesto: {songId}</p>
+                <p className="text-xs text-gray-500 mt-2">Tipo: {typeof songId}</p>
+              </>
+            )}
+            <p className="text-sm text-gray-400 mt-2">Libreria: {songLibrary.length} brani caricati</p>
+            {songLibrary.length > 0 && (
+              <p className="text-xs text-gray-500 mt-2">Primo brano ID: {songLibrary[0]?.id} (tipo: {typeof songLibrary[0]?.id})</p>
+            )}
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // ChordSheetViewer Modal - Priorità massima, viene mostrato sopra qualsiasi view
+  if (viewingSong) {
+    console.log('🎼 Rendering ChordSheetViewer per:', viewingSong.title, 'context:', songViewContext);
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 flex items-center justify-center p-8">
-        <div className="max-w-7xl w-full">
-          {/* Header */}
-          <div className="text-center mb-12">
-            <h1 className="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-4">
-              🎤 Karaoke Night 🎶
-            </h1>
-            <p className="text-2xl text-gray-300">Modalità Proiezione</p>
+      <ChordSheetViewer
+        song={viewingSong}
+        onClose={() => {
+          console.log('❌ Chiusura ChordSheetViewer');
+          setViewingSong(null);
+          // Se lo spartito è stato aperto dalla dashboard admin, resta lì
+          if (songViewContext === 'admin') {
+            // Non cambiare view, rimani in admin
+          }
+          setSongViewContext(null);
+        }}
+        onUpdateSong={async (updatedSong) => {
+          if (backendMode === 'supabase' && supabase) {
+            const { error } = await supabase
+              .from('k_songs')
+              .update({ chord_sheet: updatedSong.chord_sheet })
+              .eq('id', updatedSong.id);
+
+            if (error) {
+              console.error('Errore aggiornamento spartito:', error);
+              return;
+            }
+          }
+
+          const updatedLibrary = songLibrary.map(s =>
+            s.id === updatedSong.id ? { ...s, chord_sheet: updatedSong.chord_sheet } : s
+          );
+          setSongLibrary(updatedLibrary);
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
+          }
+          setViewingSong(updatedSong);
+        }}
+      />
+    );
+  }
+
+  // Form di modifica brano
+  if (editingSongId) {
+    const songToEdit = songLibrary.find(s => s.id === editingSongId);
+    if (!songToEdit) {
+      setEditingSongId(null);
+      return null;
+    }
+
+    return (
+      <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div className="bg-gray-800 rounded-3xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-700">
+          <div className="p-6 border-b border-gray-700 sticky top-0 bg-gray-800 z-10">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-white">Modifica Brano</h2>
+              <button
+                onClick={() => setEditingSongId(null)}
+                className="text-gray-400 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
-          {/* Round Attivo / Risultati */}
-          {currentRound && currentRound.votingOpen && (
-            <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-8 border border-purple-500/30">
-              <h2 className="text-4xl font-bold text-amber-400 mb-6 text-center">
-                🗳️ Votazione in Corso
-              </h2>
-              <div className="grid grid-cols-2 gap-6">
-                {currentRound.songs?.map((song, idx) => (
-                  <div
-                    key={song.id}
-                    className="bg-gray-700/50 rounded-2xl p-6 border border-gray-600 hover:border-purple-400 transition-all"
-                  >
-                    <div className="text-3xl font-bold text-white mb-2">{song.title}</div>
-                    <div className="text-xl text-gray-300">{song.artist}</div>
-                    {song.year && <div className="text-sm text-gray-400 mt-2">Anno: {song.year}</div>}
-                  </div>
-                ))}
+          <div className="p-6">
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              const formData = new FormData(e.target);
+              handleUpdateSong(
+                editingSongId,
+                formData.get('title'),
+                formData.get('artist'),
+                formData.get('year'),
+                formData.get('chord_sheet')
+              );
+            }}>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
+                    Titolo *
+                  </label>
+                  <input
+                    type="text"
+                    name="title"
+                    defaultValue={songToEdit.title}
+                    required
+                    className="w-full px-4 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
+                    Artista *
+                  </label>
+                  <input
+                    type="text"
+                    name="artist"
+                    defaultValue={songToEdit.artist}
+                    required
+                    className="w-full px-4 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
+                    Anno
+                  </label>
+                  <input
+                    type="number"
+                    name="year"
+                    defaultValue={songToEdit.year || ''}
+                    className="w-full px-4 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-semibold text-gray-300 mb-2">
+                    Spartito (ChordPro)
+                  </label>
+                  <textarea
+                    name="chord_sheet"
+                    defaultValue={songToEdit.chord_sheet || ''}
+                    rows={15}
+                    className="w-full px-4 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 font-mono text-sm"
+                    placeholder="{title: Titolo}
+{artist: Artista}
+
+[Am]Testo con [G]accordi..."
+                  />
+                  <p className="text-xs text-gray-400 mt-2">
+                    Formato ChordPro: usa [Am], [G], etc. per gli accordi
+                  </p>
+                </div>
               </div>
-              <div className="mt-8 text-center">
-                <div className="inline-flex items-center gap-3 bg-green-600/20 border border-green-500/50 rounded-xl px-6 py-4">
-                  <Users className="w-8 h-8 text-green-400" />
-                  <span className="text-3xl font-bold text-white">{votesReceived}</span>
-                  <span className="text-xl text-gray-300">voti ricevuti</span>
-                </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="submit"
+                  className="flex-1 px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors"
+                >
+                  💾 Salva Modifiche
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingSongId(null)}
+                  className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl font-semibold transition-colors"
+                >
+                  Annulla
+                </button>
               </div>
-            </div>
-          )}
-
-          {/* Risultati */}
-          {roundResults && (
-            <div className="space-y-8">
-              {roundResults.winner ? (
-                <div className="bg-gradient-to-br from-amber-500/20 to-yellow-500/20 backdrop-blur-xl rounded-3xl p-12 border-4 border-amber-400">
-                  <div className="text-center">
-                    <Trophy className="w-32 h-32 mx-auto mb-6 text-amber-400" />
-                    <h2 className="text-5xl font-black text-amber-400 mb-4">🏆 VINCITORE 🏆</h2>
-                    <div
-                      className={roundResults.winner.chord_sheet ? "cursor-pointer hover:scale-105 transition-transform" : ""}
-                      onClick={() => roundResults.winner.chord_sheet && setViewingSong(roundResults.winner)}
-                    >
-                      <p className="text-6xl font-bold text-white mb-4">{roundResults.winner.title}</p>
-                      <p className="text-4xl text-gray-200 mb-2">{roundResults.winner.artist}</p>
-                      {roundResults.winner.chord_sheet && (
-                        <p className="text-xl text-amber-300 animate-pulse mt-4">📄 Clicca per vedere lo spartito</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : roundResults.tiedSongs?.length > 0 ? (
-                <div className="bg-gradient-to-br from-orange-500/20 to-red-500/20 backdrop-blur-xl rounded-3xl p-12 border-4 border-orange-400">
-                  <h2 className="text-5xl font-black text-orange-400 mb-8 text-center">⚖️ PAREGGIO!</h2>
-                  <div className="grid grid-cols-2 gap-6">
-                    {roundResults.tiedSongs.map(song => (
-                      <div key={song.id} className="bg-gray-800/50 rounded-2xl p-6 border-2 border-orange-400">
-                        <p className="text-4xl font-bold text-white mb-2">{song.title}</p>
-                        <p className="text-2xl text-gray-300">{song.artist}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {/* Classifica */}
-              {roundResults.stats && roundResults.stats.length > 0 && (
-                <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-8 border border-gray-700">
-                  <h3 className="text-3xl font-bold text-purple-400 mb-6">📊 Classifica Completa</h3>
-                  <div className="space-y-4">
-                    {roundResults.stats.map((stat, i) => {
-                      const maxVotes = Math.max(...roundResults.stats.map(s => s.votes));
-                      const percent = maxVotes > 0 ? (stat.votes / maxVotes) * 100 : 0;
-                      return (
-                        <div key={`${stat.song.id}-${i}`} className="bg-gray-700/50 rounded-xl p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="text-2xl font-bold text-white">{stat.song.title}</div>
-                            <div className="text-3xl font-bold text-amber-400">{stat.votes} 🎵</div>
-                          </div>
-                          <div className="text-lg text-gray-300 mb-2">{stat.song.artist}</div>
-                          <div className="h-3 bg-gray-600 rounded-full overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500"
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Stato Idle */}
-          {!currentRound && !roundResults && (
-            <div className="text-center">
-              <Music className="w-48 h-48 mx-auto mb-8 text-purple-400 opacity-50" />
-              <p className="text-4xl text-gray-400">In attesa del prossimo round...</p>
-            </div>
-          )}
+            </form>
+          </div>
         </div>
-
-        {/* ChordSheetViewer per spartiti */}
-        {viewingSong && (
-          <ChordSheetViewer
-            song={viewingSong}
-            onClose={() => setViewingSong(null)}
-            onUpdateSong={() => {}}
-          />
-        )}
       </div>
     );
   }
@@ -2797,7 +2965,7 @@ export default function KaraokeApp() {
             </h2>
             <div className="flex items-center gap-3">
               <button
-                onClick={() => window.open(`${window.location.origin}/?display=true`, '_blank', 'width=1920,height=1080')}
+                onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=display`, '_blank', 'width=1920,height=1080')}
                 className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg"
                 title="Apri display per proiezione"
               >
@@ -2814,9 +2982,9 @@ export default function KaraokeApp() {
             </div>
           </div>
 
-          {/* Stats Cards - Solo in modalità compatta (cliccabili) */}
-          {adminViewMode === 'compact' && !compactSection && (
-            <div className="grid grid-cols-3 gap-6 mb-8">
+          {/* Stats Cards - Solo in modalità compatta (cliccabili) - Visibili solo se non c'è una modalità di gioco selezionata */}
+          {adminViewMode === 'compact' && !compactSection && !selectedGameMode && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
               {/* Card Partecipanti - Cliccabile */}
               <button
                 onClick={() => setCompactSection('users')}
@@ -2839,9 +3007,24 @@ export default function KaraokeApp() {
                 <p className="text-xs text-purple-300 mt-2">👆 Clicca per gestire</p>
               </button>
 
+              {/* Card Scelti dalla Band - Cliccabile */}
+              <button
+                onClick={() => setCompactSection('band_picks')}
+                className="bg-gradient-to-br from-red-500/20 to-pink-600/20 border border-red-500/30 hover:border-red-400 rounded-2xl p-6 text-center backdrop-blur-xl transition-all hover:scale-105 cursor-pointer"
+              >
+                <Music className="w-12 h-12 text-red-400 mx-auto mb-3" />
+                <p className="text-5xl font-bold text-white mb-2">{bandPicksList.length}</p>
+                <p className="text-gray-300 font-semibold">Scaletta Band</p>
+                <p className="text-xs text-red-300 mt-2">👆 Clicca per gestire</p>
+              </button>
+
               {/* Card Round Attivo - Cliccabile */}
               <button
-                onClick={() => currentRound && setCompactSection('round')}
+                onClick={() => {
+                  if (currentRound && currentRound.type) {
+                    setSelectedGameMode(currentRound.type);
+                  }
+                }}
                 disabled={!currentRound}
                 className={`bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 rounded-2xl p-6 text-center backdrop-blur-xl transition-all ${
                   currentRound ? 'hover:border-amber-400 hover:scale-105 cursor-pointer' : 'opacity-50 cursor-not-allowed'
@@ -2903,6 +3086,7 @@ export default function KaraokeApp() {
                 <h3 className="text-2xl font-bold text-white flex items-center gap-2">
                   <Music className="w-7 h-7 text-purple-400" />
                   Libreria Brani
+                  <span className="text-xs bg-purple-500/30 px-2 py-1 rounded">SEZIONE: songs</span>
                 </h3>
                 <button
                   onClick={() => setCompactSection(null)}
@@ -2921,6 +3105,47 @@ export default function KaraokeApp() {
                 className="w-full px-4 py-3 rounded-xl bg-gray-700/50 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-purple-400 mb-4"
               />
 
+              {/* Pulsante Import ChordPro */}
+              <div className="mb-4">
+                <input
+                  ref={choFilesInputRef}
+                  type="file"
+                  accept=".cho"
+                  multiple
+                  onChange={handleChoFilesChange}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => choFilesInputRef.current?.click()}
+                  className="w-full px-4 py-3 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white rounded-xl font-semibold transition-all shadow-lg flex items-center justify-center gap-2"
+                >
+                  <Upload className="w-5 h-5" />
+                  📥 Importa Spartiti (.cho)
+                </button>
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  Seleziona uno o più file .cho (ChordPro) da importare
+                </p>
+              </div>
+
+              {/* Messaggio import */}
+              {importMessage && (
+                <div className="mb-4 p-3 bg-green-500/20 border border-green-500/30 rounded-xl text-green-300 text-sm">
+                  {importMessage}
+                </div>
+              )}
+
+              {/* Errori import */}
+              {libraryErrors.length > 0 && (
+                <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-xl">
+                  <p className="text-red-300 text-sm font-semibold mb-2">⚠️ Errori durante l'importazione:</p>
+                  <ul className="text-xs text-red-200 space-y-1">
+                    {libraryErrors.map((err, idx) => (
+                      <li key={idx}>• {err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Lista brani con scroll */}
               <div className="max-h-96 overflow-y-auto space-y-2">
                 {songLibrary
@@ -2928,7 +3153,7 @@ export default function KaraokeApp() {
                     song.title.toLowerCase().includes(songSearch.toLowerCase()) ||
                     song.artist.toLowerCase().includes(songSearch.toLowerCase())
                   )
-                  .map(song => (
+                  .map((song) => (
                     <div key={song.id} className="bg-gray-700/50 rounded-xl p-4 border border-gray-600 hover:border-purple-400 transition-all">
                       <div className="flex items-center justify-between">
                         <div className="flex-1">
@@ -2940,13 +3165,44 @@ export default function KaraokeApp() {
                         </div>
                         <div className="flex gap-2 items-center">
                           {song.chord_sheet && (
-                            <button
-                              onClick={() => setViewingSong(song)}
-                              className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
-                            >
-                              📄 Apri
-                            </button>
+                            <>
+                              <button
+                                onClick={() => {
+                                  setViewingSong(song);
+                                  setSongViewContext('admin');
+                                }}
+                                className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
+                              >
+                                📄 Apri
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${song.id}`;
+                                  window.open(url, '_blank');
+                                }}
+                                className="px-3 py-1 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
+                                title="Proietta spartito su display esterno"
+                              >
+                                📺 Proietta
+                              </button>
+                            </>
                           )}
+                          <button
+                            onClick={() => {
+                              if (!bandPicksList.find(s => s.id === song.id)) {
+                                const newList = [...bandPicksList, song];
+                                setBandPicksList(newList);
+                                if (typeof localStorage !== 'undefined') {
+                                  localStorage.setItem('band_picks_list', JSON.stringify(newList));
+                                }
+                              }
+                            }}
+                            disabled={!!bandPicksList.find(s => s.id === song.id)}
+                            className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={bandPicksList.find(s => s.id === song.id) ? "Già in scaletta" : "Aggiungi a Scelti dalla Band"}
+                          >
+                            🎸
+                          </button>
                           <button
                             onClick={() => setEditingSongId(song.id)}
                             className="text-sm text-blue-400 hover:text-blue-300"
@@ -2964,6 +3220,171 @@ export default function KaraokeApp() {
                     </div>
                   ))}
               </div>
+
+              {/* Indicatore brani in scaletta */}
+              {bandPicksList.length > 0 && (
+                <div className="mt-4 p-4 bg-red-500/20 border border-red-500/30 rounded-xl">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-red-400 font-semibold flex items-center gap-2">
+                      🎸 Brani in Scaletta: {bandPicksList.length}
+                    </p>
+                    <button
+                      onClick={() => setCompactSection('band_picks')}
+                      className="text-xs text-red-300 hover:text-red-200 underline"
+                    >
+                      Vedi scaletta →
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {bandPicksList.slice(0, 5).map((song, index) => (
+                      <div key={index} className="bg-red-900/30 px-2 py-1 rounded text-xs text-red-200">
+                        {song.title}
+                      </div>
+                    ))}
+                    {bandPicksList.length > 5 && (
+                      <div className="bg-red-900/30 px-2 py-1 rounded text-xs text-red-200">
+                        +{bandPicksList.length - 5} altri
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Sezione Compatta Espansa - Scelti dalla Band */}
+          {adminViewMode === 'compact' && compactSection === 'band_picks' && (
+            <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 mb-6 border border-gray-700">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-2xl font-bold text-white flex items-center gap-2">
+                  <Music className="w-7 h-7 text-red-400" />
+                  🎸 Scelti dalla Band
+                  <span className="text-xs bg-red-500/30 px-2 py-1 rounded">SEZIONE: band_picks</span>
+                </h3>
+                <button
+                  onClick={() => setCompactSection(null)}
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ✕ Chiudi
+                </button>
+              </div>
+
+              {/* Statistiche */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4">
+                  <p className="text-red-400 text-sm uppercase tracking-wider mb-1">Brani in Scaletta</p>
+                  <p className="text-3xl font-bold text-white">{bandPicksList.length}</p>
+                </div>
+                <div className="bg-pink-500/20 border border-pink-500/30 rounded-xl p-4">
+                  <p className="text-pink-400 text-sm uppercase tracking-wider mb-1">Brano Corrente</p>
+                  <p className="text-3xl font-bold text-white">{currentBandPickIndex + 1} / {bandPicksList.length || '0'}</p>
+                </div>
+              </div>
+
+              {bandPicksList.length > 0 ? (
+                <div className="space-y-4">
+                  {/* Lista brani */}
+                  <div className="max-h-96 overflow-y-auto space-y-2">
+                    {bandPicksList.map((song, index) => (
+                      <div
+                        key={index}
+                        className={`flex items-center justify-between p-3 rounded-xl transition-all ${
+                          index === currentBandPickIndex
+                            ? 'bg-red-600/30 border-2 border-red-400'
+                            : 'bg-gray-700/50 border border-gray-600'
+                        }`}
+                      >
+                        <div className="flex-1">
+                          <p className="font-bold text-white">
+                            {index + 1}. {song.title}
+                          </p>
+                          <p className="text-sm text-gray-400">{song.artist}</p>
+                        </div>
+                        <div className="flex gap-2 items-center">
+                          {song.chord_sheet && (
+                            <button
+                              onClick={() => {
+                                setViewingSong(song);
+                                setSongViewContext('admin');
+                              }}
+                              className="px-2 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
+                            >
+                              📄
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              const newList = bandPicksList.filter((_, i) => i !== index);
+                              setBandPicksList(newList);
+                              if (typeof localStorage !== 'undefined') {
+                                localStorage.setItem('band_picks_list', JSON.stringify(newList));
+                              }
+                              if (currentBandPickIndex >= newList.length && newList.length > 0) {
+                                setCurrentBandPickIndex(newList.length - 1);
+                              }
+                            }}
+                            className="text-xs text-red-400 hover:text-red-300"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Controlli navigazione */}
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={() => setCurrentBandPickIndex(Math.max(0, currentBandPickIndex - 1))}
+                      disabled={currentBandPickIndex === 0}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
+                    >
+                      ⬅️ Precedente
+                    </button>
+                    <button
+                      onClick={() => setCurrentBandPickIndex(Math.min(bandPicksList.length - 1, currentBandPickIndex + 1))}
+                      disabled={currentBandPickIndex >= bandPicksList.length - 1}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
+                    >
+                      Successivo ➡️
+                    </button>
+                  </div>
+
+                  {/* Pulsanti azione */}
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSelectedGameMode('band_picks')}
+                      className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                    >
+                      📋 Gestisci Scaletta
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Vuoi svuotare la scaletta?')) {
+                          setBandPicksList([]);
+                          setCurrentBandPickIndex(0);
+                          if (typeof localStorage !== 'undefined') {
+                            localStorage.removeItem('band_picks_list');
+                          }
+                        }
+                      }}
+                      className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg font-semibold transition-colors"
+                    >
+                      🗑️ Svuota
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-400 mb-4">Nessun brano in scaletta</p>
+                  <button
+                    onClick={() => setCompactSection('songs')}
+                    className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors"
+                  >
+                    🎸 Aggiungi Brani
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -3012,7 +3433,7 @@ export default function KaraokeApp() {
           )}
 
           {/* Card Utenti - Solo in modalità estesa */}
-          {adminViewMode === 'extended' && (
+          {adminViewMode === 'extended' && !selectedGameMode && (
           <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -3053,309 +3474,769 @@ export default function KaraokeApp() {
           </div>
           )}
 
-          {/* Card Brani - Solo in modalità estesa */}
-          {adminViewMode === 'extended' && (
-          <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                  <Music className="w-7 h-7 text-purple-600" />
-                  Libreria Brani
+
+          {/* Modalità di Gioco - Schermata principale (visibile in modalità compatta quando non c'è sezione espansa) */}
+          {adminViewMode === 'compact' && !compactSection && !selectedGameMode && (
+            <div className="space-y-6">
+              <div className="text-center mb-6">
+                <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2">
+                  🎮 Modalità di Gioco
                 </h3>
-                <p className="text-sm text-gray-600 mt-1">Gestisci la tua libreria musicale</p>
+                <p className="text-gray-400">Seleziona una modalità per iniziare</p>
               </div>
-              <div className="text-right">
-                <p className="text-4xl font-bold text-purple-600">{songLibrary.length}</p>
-                <p className="text-xs text-gray-500 uppercase">Brani totali</p>
-              </div>
-            </div>
 
-            <div className="flex gap-2 mb-4 flex-wrap">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".csv"
-                className="hidden"
-                onChange={handleSongFileChange}
-              />
-              <input
-                ref={choFilesInputRef}
-                type="file"
-                accept=".cho"
-                multiple
-                className="hidden"
-                onChange={handleChoFilesChange}
-              />
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 font-semibold"
-              >
-                <Upload className="w-5 h-5" />
-                Importa CSV
-              </button>
-              <button
-                onClick={() => choFilesInputRef.current?.click()}
-                className="flex items-center gap-2 bg-amber-600 text-white px-4 py-2 rounded-lg hover:bg-amber-700 font-semibold"
-              >
-                <Music className="w-5 h-5" />
-                Importa ChordPro (.cho)
-              </button>
-              <button
-                onClick={() => setShowAddSongForm(!showAddSongForm)}
-                className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
-              >
-                <Music className="w-5 h-5" />
-                {showAddSongForm ? 'Annulla' : 'Aggiungi Brano'}
-              </button>
-            </div>
-
-            {importMessage && (
-              <div className="flex items-center gap-2 text-green-800 bg-green-100 border border-green-200 p-3 rounded-lg mb-3">
-                <CheckCircle className="w-5 h-5" />
-                <span>{importMessage}</span>
-              </div>
-            )}
-
-            {libraryErrors.length > 0 && (
-              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-3">
-                <p className="font-bold mb-1">Errori di parsing:</p>
-                <ul className="list-disc pl-5 text-sm space-y-1">
-                  {libraryErrors.map((err, idx) => (
-                    <li key={idx}>{err}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Form Aggiungi Brano */}
-            {showAddSongForm && (
-              <div className="bg-purple-50 border-2 border-purple-200 rounded-lg p-4 mb-4">
-                <h4 className="font-bold text-purple-900 mb-3">Nuovo Brano</h4>
-                <form onSubmit={(e) => {
-                  e.preventDefault();
-                  const formData = new FormData(e.target);
-                  handleAddSong(
-                    formData.get('title'),
-                    formData.get('artist'),
-                    formData.get('year'),
-                    formData.get('chord_sheet') || null
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {gameCategories.map(cat => {
+                  const IconComponent = cat.icon;
+                  const isActive = currentRound?.type === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setSelectedGameMode(cat.id)}
+                      className={`relative p-8 bg-gradient-to-br ${cat.color} text-white rounded-3xl hover:shadow-2xl transition-all transform hover:scale-105 border-2 border-white/20 backdrop-blur-xl ${
+                        isActive ? 'ring-4 ring-yellow-400 shadow-yellow-400/50' : ''
+                      }`}
+                    >
+                      <IconComponent className="w-16 h-16 mx-auto mb-4" />
+                      <p className="font-bold text-xl text-center mb-2">{cat.name}</p>
+                      {isActive && (
+                        <div className="absolute top-3 right-3 bg-yellow-400 text-gray-900 text-xs font-bold px-2 py-1 rounded-full">
+                          Attivo
+                        </div>
+                      )}
+                    </button>
                   );
-                  e.target.reset();
-                }}>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-                    <input
-                      name="title"
-                      placeholder="Titolo"
-                      required
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                    <input
-                      name="artist"
-                      placeholder="Artista"
-                      required
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                    <input
-                      name="year"
-                      placeholder="Anno (opzionale)"
-                      type="number"
-                      className="px-3 py-2 border border-gray-300 rounded-lg"
-                    />
-                  </div>
-                  <div className="mb-3">
-                    <textarea
-                      name="chord_sheet"
-                      placeholder="Spartito ChordPro (opzionale) - Incolla qui il contenuto in formato ChordPro"
-                      rows="6"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
-                    />
-                    <p className="text-xs text-gray-600 mt-1">
-                      Formato ChordPro: usa [Am], [C], [G] per gli accordi e {'{'}title: Titolo{'}'}, {'{'}artist: Artista{'}'} per i metadati
-                    </p>
-                  </div>
-                  <button
-                    type="submit"
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 font-semibold"
-                  >
-                    Aggiungi
-                  </button>
-                </form>
+                })}
               </div>
-            )}
-
-            {/* Ricerca Brani */}
-            {songLibrary.length > 0 && (
-              <div className="mb-4">
-                <input
-                  type="text"
-                  placeholder="Cerca per titolo o artista..."
-                  value={songSearchQuery}
-                  onChange={(e) => setSongSearchQuery(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-                />
-              </div>
-            )}
-
-            {/* Lista Brani */}
-            {songLibrary.length > 0 && (
-              <div className="max-h-96 overflow-y-auto">
-                <div className="space-y-2">
-                  {songLibrary
-                    .filter(song => {
-                      if (!songSearchQuery) return true;
-                      const query = songSearchQuery.toLowerCase();
-                      return (
-                        song.title.toLowerCase().includes(query) ||
-                        song.artist.toLowerCase().includes(query)
-                      );
-                    })
-                    .map(song => (
-                      <div key={song.id} className="bg-gray-50 border border-gray-200 rounded-lg p-3">
-                        {editingSongId === song.id ? (
-                          <form onSubmit={(e) => {
-                            e.preventDefault();
-                            const formData = new FormData(e.target);
-                            handleUpdateSong(
-                              song.id,
-                              formData.get('title'),
-                              formData.get('artist'),
-                              formData.get('year')
-                            );
-                          }}>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
-                              <input
-                                name="title"
-                                defaultValue={song.title}
-                                required
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                              <input
-                                name="artist"
-                                defaultValue={song.artist}
-                                required
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                              <input
-                                name="year"
-                                defaultValue={song.year || ''}
-                                type="number"
-                                className="px-2 py-1 border border-gray-300 rounded text-sm"
-                              />
-                            </div>
-                            <div className="flex gap-2">
-                              <button
-                                type="submit"
-                                className="text-xs bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700"
-                              >
-                                Salva
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setEditingSongId(null)}
-                                className="text-xs bg-gray-500 text-white px-3 py-1 rounded hover:bg-gray-600"
-                              >
-                                Annulla
-                              </button>
-                            </div>
-                          </form>
-                        ) : (
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1 p-2">
-                              <p className="font-bold text-gray-800 flex items-center gap-2">
-                                {song.title}
-                                {song.chord_sheet && <Music className="w-4 h-4 text-amber-500" />}
-                              </p>
-                              <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
-                            </div>
-                            <div className="flex gap-2 items-center">
-                              {song.chord_sheet && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    console.log('Opening song:', song.title, 'Has chord_sheet:', !!song.chord_sheet);
-                                    setViewingSong(song);
-                                  }}
-                                  className="px-3 py-1 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
-                                >
-                                  📄 Apri
-                                </button>
-                              )}
-                              <button
-                                onClick={() => setEditingSongId(song.id)}
-                                className="text-sm text-blue-600 hover:text-blue-800"
-                              >
-                                Modifica
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSong(song.id)}
-                                className="text-sm text-red-600 hover:text-red-800"
-                              >
-                                Elimina
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {songLibrary.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-4">Nessun brano in libreria. Importa un CSV o aggiungi manualmente.</p>
-            )}
-          </div>
+            </div>
           )}
 
-          {/* Card Modalità di Gioco - Visibile in entrambe le modalità */}
-          <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
-            <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
-              <Disc className="w-7 h-7 text-indigo-600" />
-              Modalità di Gioco
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">Seleziona una modalità per avviare un round</p>
-
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              {gameCategories.map(cat => {
-                const IconComponent = cat.icon;
-                const isActive = currentRound?.type === cat.id;
-                return (
+          {/* Pagina dedicata Sondaggio Brani */}
+          {selectedGameMode === 'poll' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-400 mb-2 flex items-center gap-3">
+                    <Music className="w-10 h-10 text-purple-400" />
+                    {currentRound?.isTiebreaker ? '⚖️ Spareggio' : '📊 Sondaggio Brani'}
+                  </h3>
+                  <p className="text-gray-400">
+                    {currentRound?.isTiebreaker
+                      ? `Votazione di spareggio tra ${currentRound.songs?.length || 0} brani ex aequo`
+                      : 'Prepara 10 brani casuali e gestisci la votazione'}
+                  </p>
+                </div>
+                <div className="flex gap-3">
                   <button
-                    key={cat.id}
-                    onClick={() => {
-                      if (cat.id === 'poll') {
-                        // Per il sondaggio, scroll alla sezione dedicata
-                        document.getElementById('poll-section')?.scrollIntoView({ behavior: 'smooth' });
-                      } else if (cat.id === 'band_picks' && isActive) {
-                        // Se Band Picks è già attivo, avanza al brano successivo
-                        handleNextBandPick();
-                      } else {
-                        handleStartRound(cat.id);
-                      }
-                    }}
-                    className={`p-6 bg-gradient-to-br ${cat.color} text-white rounded-xl hover:shadow-xl transition-all transform hover:scale-105 ${
-                      isActive ? 'ring-4 ring-yellow-400' : ''
-                    }`}
+                    onClick={() => setSelectedGameMode(null)}
+                    className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 hover:text-white px-6 py-3 rounded-xl transition-all border border-gray-700 backdrop-blur-xl"
                   >
-                    <IconComponent className="w-12 h-12 mx-auto mb-2" />
-                    <p className="font-bold text-center">{cat.name}</p>
-                    {isActive && <p className="text-xs mt-1 text-yellow-200">Attivo</p>}
+                    🎮 Dashboard
                   </button>
-                );
-              })}
+                  <button
+                    onClick={() => setView('home')}
+                    className="flex items-center gap-2 bg-gray-800/50 hover:bg-gray-700/50 text-gray-300 hover:text-white px-6 py-3 rounded-xl transition-all border border-gray-700 backdrop-blur-xl"
+                  >
+                    🏠 Home
+                  </button>
+                </div>
+              </div>
+
+              {/* Avvisi */}
+              {songLibrary.length < 10 && (
+                <div className="flex items-center gap-3 text-yellow-300 bg-yellow-900/30 border border-yellow-700/50 p-4 rounded-xl backdrop-blur-xl">
+                  <AlertTriangle className="w-5 h-5" />
+                  <span className="font-semibold">Carica almeno 10 brani per preparare il sondaggio.</span>
+                </div>
+              )}
+
+              {roundMessage && (
+                <div className="flex items-center gap-3 text-blue-300 bg-blue-900/30 border border-blue-700/50 p-4 rounded-xl backdrop-blur-xl">
+                  <CheckCircle className="w-5 h-5 text-blue-400" />
+                  <span className="font-semibold">{roundMessage}</span>
+                </div>
+              )}
+
+              {/* Statistiche Round */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="bg-gradient-to-br from-purple-500/20 to-pink-600/20 border border-purple-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-sm text-gray-400 mb-2">Stato Round</p>
+                  <p className="text-2xl font-bold text-white">
+                    {pollPrepared ? (currentRound?.state || 'In attesa') : 'Nessun round'}
+                  </p>
+                </div>
+                <div className="bg-gradient-to-br from-blue-500/20 to-cyan-600/20 border border-blue-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-sm text-gray-400 mb-2">Voti Ricevuti</p>
+                  <p className="text-2xl font-bold text-white">{votesReceived} / {users.length}</p>
+                </div>
+                <div className="bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-sm text-gray-400 mb-2">Brani nel Round</p>
+                  <p className="text-2xl font-bold text-white">{currentRound?.songs?.length || 0}</p>
+                </div>
+              </div>
+
+              {/* Pulsanti azione principali */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <button
+                  onClick={handlePreparePoll}
+                  disabled={songLibrary.length < 10}
+                  className="p-6 bg-gradient-to-br from-purple-600 to-pink-600 text-white rounded-2xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all hover:scale-105 border border-white/20 backdrop-blur-xl"
+                >
+                  🎲 Prepara Round
+                </button>
+                <button
+                  onClick={handleOpenVoting}
+                  disabled={!pollPrepared || currentRound?.votingOpen}
+                  className="p-6 bg-gradient-to-br from-green-600 to-emerald-600 text-white rounded-2xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all hover:scale-105 border border-white/20 backdrop-blur-xl"
+                >
+                  ✅ Apri Votazione
+                </button>
+                <button
+                  onClick={handleCloseVoting}
+                  disabled={!currentRound || !currentRound.votingOpen}
+                  className="p-6 bg-gradient-to-br from-red-600 to-pink-600 text-white rounded-2xl hover:shadow-2xl disabled:opacity-50 disabled:cursor-not-allowed font-bold text-lg transition-all hover:scale-105 border border-white/20 backdrop-blur-xl"
+                >
+                  🛑 Chiudi Votazione
+                </button>
+              </div>
+
+              {/* Reset Round */}
+              <div className="flex justify-end">
+                <button
+                  onClick={handleResetRound}
+                  className="flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold transition-colors"
+                >
+                  <RefreshCcw className="w-4 h-4" />
+                  Reset Round
+                </button>
+              </div>
+
+              {/* Anteprima brani round corrente */}
+              {currentRound && currentRound.songs && (
+                <div className="bg-gray-800/50 backdrop-blur-xl rounded-3xl p-6 border border-gray-700">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="text-2xl font-bold text-white flex items-center gap-2">
+                      <Eye className="w-6 h-6 text-purple-400" />
+                      Brani del Round
+                    </h4>
+                    <span className="text-sm text-gray-400">
+                      {currentRound.votingOpen ? '🟢 Votazione Aperta' : '🔴 Votazione Chiusa'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {currentRound.songs.map(song => {
+                      const votes = currentRound.votingOpen
+                        ? (currentRound.votes || []).filter(v => v.songId === song.id).length
+                        : 0;
+                      return (
+                        <div key={song.id} className="bg-gray-700/50 rounded-xl p-4 border border-gray-600 hover:border-purple-400 transition-all">
+                          <p className="font-bold text-white flex items-center gap-2">
+                            {song.title}
+                            {song.chord_sheet && <Music className="w-4 h-4 text-amber-400" />}
+                          </p>
+                          <p className="text-sm text-gray-300">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
+                          {currentRound.votingOpen && (
+                            <div className="mt-3 flex items-center gap-2">
+                              <div className="flex-1 bg-gray-600 rounded-full h-2 overflow-hidden">
+                                <div
+                                  className="bg-gradient-to-r from-purple-500 to-pink-500 h-full transition-all"
+                                  style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-bold text-purple-400">{votes}</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Risultati */}
+              {roundResults && (
+                <div className="bg-gradient-to-br from-green-500/20 to-teal-600/20 border border-green-500/30 rounded-3xl p-6 backdrop-blur-xl">
+                  <h4 className="text-2xl font-bold text-green-400 mb-4 flex items-center gap-2">
+                    🏆 Risultati
+                  </h4>
+                  {roundResults.winner && (
+                    <div className="mb-4 bg-green-900/30 rounded-2xl p-6 border border-green-500/50">
+                      <p className="text-sm uppercase text-green-300 mb-2">Vincitore</p>
+                      <div
+                        className={roundResults.winner.chord_sheet ? "cursor-pointer hover:bg-green-800/30 p-3 rounded-lg transition-colors" : ""}
+                        onClick={() => {
+                          console.log('🎵 Click su vincitore, ha spartito?', !!roundResults.winner.chord_sheet);
+                          if (roundResults.winner.chord_sheet) {
+                            console.log('📖 Apertura spartito vincitore:', roundResults.winner.title);
+                            setViewingSong(roundResults.winner);
+                            setSongViewContext('admin');
+                          }
+                        }}
+                      >
+                        <p className="text-4xl font-bold text-green-400 flex items-center gap-3">
+                          {roundResults.winner.title}
+                          {roundResults.winner.chord_sheet && <Music className="w-8 h-8 text-amber-400" />}
+                        </p>
+                        <p className="text-xl text-green-200 mt-1">{roundResults.winner.artist}</p>
+                        {roundResults.winner.chord_sheet && (
+                          <p className="text-xs text-amber-400 mt-2">👆 Clicca per vedere lo spartito</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {roundResults.stats && <ResultList stats={roundResults.stats} compact />}
+                  <button
+                    onClick={() => setRoundResults(null)}
+                    className="mt-4 text-sm text-green-400 hover:text-green-300 font-semibold transition-colors"
+                  >
+                    Nascondi risultati
+                  </button>
+                </div>
+              )}
             </div>
+          )}
 
-            {currentRound && currentRound.type !== 'poll' && (
-              <button
-                onClick={handleEndRound}
-                className="mt-6 w-full bg-red-600 text-white py-3 rounded-lg hover:bg-red-700 font-semibold"
-              >
-                Termina Round Corrente
-              </button>
-            )}
-          </div>
+          {/* ==================== PAGINA DUETTI ==================== */}
+          {selectedGameMode === 'duet' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400 mb-2 flex items-center gap-3">
+                    <Users className="w-10 h-10 text-blue-400" />
+                    💕 Duetti
+                  </h3>
+                  <p className="text-gray-400 text-lg">Trova coppie che hanno votato la stessa canzone e falli duettare!</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedGameMode(null)}
+                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-lg hover:shadow-xl flex items-center gap-2"
+                  >
+                    🎮 Dashboard
+                  </button>
+                  <button
+                    onClick={() => setView('home')}
+                    className="px-6 py-3 bg-gray-800/50 backdrop-blur-sm border border-gray-700 text-white rounded-xl hover:bg-gray-700/50 transition-all font-semibold flex items-center gap-2"
+                  >
+                    🏠 Home
+                  </button>
+                </div>
+              </div>
 
-          {/* Card Scelti dalla Band */}
+              {/* Messaggio di stato */}
+              {roundMessage && (
+                <div className="bg-blue-500/20 border border-blue-500/30 rounded-2xl p-4 backdrop-blur-xl">
+                  <p className="text-blue-300 text-center font-semibold">{roundMessage}</p>
+                </div>
+              )}
+
+              {/* Pulsante Avvia Duetto */}
+              <div className="bg-gradient-to-br from-blue-500/20 to-cyan-600/20 border border-blue-500/30 rounded-3xl p-8 backdrop-blur-xl text-center">
+                <h4 className="text-2xl font-bold text-blue-400 mb-4">Cerca Duetto</h4>
+                <p className="text-gray-300 mb-6">Il sistema cercherà automaticamente coppie che hanno votato per la stessa canzone nelle votazioni passate.</p>
+
+                {/* Avviso round attivo */}
+                {currentRound && currentRound.type !== 'duet' && (
+                  <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-4">
+                    <p className="text-red-300 font-semibold mb-3">⚠️ C'è un round attivo di tipo "{currentRound.type}"</p>
+                    <button
+                      onClick={handleEndRound}
+                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                    >
+                      Termina Round Corrente
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleStartDuet}
+                  disabled={!!currentRound}
+                  className="px-8 py-4 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-xl hover:from-blue-700 hover:to-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-lg shadow-lg hover:shadow-xl"
+                >
+                  🔍 Trova Duetto
+                </button>
+              </div>
+
+              {/* Visualizzazione Round Corrente */}
+              {currentRound && currentRound.type === 'duet' && (
+                <div className="bg-gradient-to-br from-pink-500/20 to-purple-600/20 border border-pink-500/30 rounded-3xl p-8 backdrop-blur-xl">
+                  <h4 className="text-3xl font-bold text-pink-400 mb-6 text-center">💕 Duetto Trovato! 💕</h4>
+
+                  {/* Due utenti affiancati */}
+                  <div className="flex justify-center items-center gap-8 mb-8">
+                    <div className="text-center">
+                      <img
+                        src={currentRound.user1.photo}
+                        alt={currentRound.user1.name}
+                        className="w-32 h-32 rounded-full mx-auto border-4 border-pink-400 mb-3 shadow-xl"
+                      />
+                      <p className="text-2xl font-bold text-pink-300">{currentRound.user1.name}</p>
+                    </div>
+
+                    <div className="text-6xl text-pink-400">❤️</div>
+
+                    <div className="text-center">
+                      <img
+                        src={currentRound.user2.photo}
+                        alt={currentRound.user2.name}
+                        className="w-32 h-32 rounded-full mx-auto border-4 border-pink-400 mb-3 shadow-xl"
+                      />
+                      <p className="text-2xl font-bold text-pink-300">{currentRound.user2.name}</p>
+                    </div>
+                  </div>
+
+                  {/* Canzone */}
+                  <div className="bg-pink-900/30 rounded-2xl p-6 border border-pink-500/50 text-center">
+                    <p className="text-gray-400 mb-3">🎵 Canterete insieme 🎵</p>
+                    <p className="text-3xl font-bold text-pink-300 mb-2">{currentRound.song.title}</p>
+                    <p className="text-xl text-pink-200">{currentRound.song.artist}</p>
+                    {currentRound.song.chord_sheet && (
+                      <button
+                        onClick={() => {
+                          setViewingSong(currentRound.song);
+                          setSongViewContext('admin');
+                        }}
+                        className="mt-4 px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto"
+                      >
+                        <Music className="w-5 h-5" />
+                        Vedi Spartito
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Pulsanti */}
+                  <div className="flex gap-4 justify-center mt-6">
+                    <button
+                      onClick={handleEndRound}
+                      className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors"
+                    >
+                      Termina Round
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Reset Round */}
+              {currentRound && currentRound.type === 'duet' && (
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleResetRound}
+                    className="flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold transition-colors"
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                    Reset Round
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ==================== PAGINA RUOTA DELLA FORTUNA ==================== */}
+          {selectedGameMode === 'wheel' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400 mb-2 flex items-center gap-3">
+                    <Disc className="w-10 h-10 text-yellow-400" />
+                    🎰 Ruota della Fortuna
+                  </h3>
+                  <p className="text-gray-400 text-lg">Selezione casuale di un partecipante che sceglierà tra 20 brani casuali!</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedGameMode(null)}
+                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-lg hover:shadow-xl flex items-center gap-2"
+                  >
+                    🎮 Dashboard
+                  </button>
+                  <button
+                    onClick={() => setView('home')}
+                    className="px-6 py-3 bg-gray-800/50 backdrop-blur-sm border border-gray-700 text-white rounded-xl hover:bg-gray-700/50 transition-all font-semibold flex items-center gap-2"
+                  >
+                    🏠 Home
+                  </button>
+                </div>
+              </div>
+
+              {/* Statistiche */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-yellow-500/20 to-orange-600/20 border border-yellow-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-yellow-400 text-sm uppercase tracking-wider mb-2">Partecipanti</p>
+                  <p className="text-4xl font-bold text-white">{users.length}</p>
+                  <p className="text-gray-400 text-sm mt-1">Minimo richiesto: 2</p>
+                </div>
+                <div className="bg-gradient-to-br from-yellow-500/20 to-orange-600/20 border border-yellow-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-yellow-400 text-sm uppercase tracking-wider mb-2">Brani in Libreria</p>
+                  <p className="text-4xl font-bold text-white">{songLibrary.length}</p>
+                  <p className="text-gray-400 text-sm mt-1">Minimo richiesto: 20</p>
+                </div>
+              </div>
+
+              {/* Messaggio di stato */}
+              {roundMessage && (
+                <div className="bg-yellow-500/20 border border-yellow-500/30 rounded-2xl p-4 backdrop-blur-xl">
+                  <p className="text-yellow-300 text-center font-semibold">{roundMessage}</p>
+                </div>
+              )}
+
+              {/* Pulsante Avvia Ruota */}
+              <div className="bg-gradient-to-br from-yellow-500/20 to-orange-600/20 border border-yellow-500/30 rounded-3xl p-8 backdrop-blur-xl text-center">
+                <h4 className="text-2xl font-bold text-yellow-400 mb-4">Gira la Ruota!</h4>
+                <p className="text-gray-300 mb-6">Seleziona casualmente un partecipante che sceglierà un brano tra 20 opzioni casuali.</p>
+
+                {/* Avviso round attivo */}
+                {currentRound && currentRound.type !== 'wheel' && (
+                  <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-4">
+                    <p className="text-red-300 font-semibold mb-3">⚠️ C'è un round attivo di tipo "{currentRound.type}"</p>
+                    <button
+                      onClick={handleEndRound}
+                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                    >
+                      Termina Round Corrente
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleStartWheel}
+                  disabled={!!currentRound || users.length < 2 || songLibrary.length < 20}
+                  className="px-8 py-4 bg-gradient-to-r from-yellow-600 to-orange-600 text-white rounded-xl hover:from-yellow-700 hover:to-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-lg shadow-lg hover:shadow-xl"
+                >
+                  🎰 Gira la Ruota
+                </button>
+                {(users.length < 2 || songLibrary.length < 20) && (
+                  <p className="text-red-400 text-sm mt-3">
+                    {users.length < 2 ? '⚠️ Servono almeno 2 partecipanti' : '⚠️ Servono almeno 20 brani in libreria'}
+                  </p>
+                )}
+              </div>
+
+              {/* Visualizzazione Round Corrente */}
+              {currentRound && currentRound.type === 'wheel' && (
+                <div className="bg-gradient-to-br from-yellow-500/20 to-orange-600/20 border border-yellow-500/30 rounded-3xl p-8 backdrop-blur-xl">
+                  <h4 className="text-3xl font-bold text-yellow-400 mb-6 text-center">🎰 Round in Corso</h4>
+
+                  {/* Stato: Spinning - Mostra la ruota */}
+                  {currentRound.state === 'spinning' && currentRound.users && (
+                    <div>
+                      <WheelOfFortune
+                        items={currentRound.users}
+                        type="users"
+                        autoSpin={true}
+                        onComplete={handleWheelComplete}
+                        preselectedWinnerIndex={currentRound.preselectedWinnerIndex}
+                      />
+                      <div className="text-center mt-4">
+                        <button
+                          onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=display`, '_blank')}
+                          className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:from-purple-700 hover:to-blue-700 transition-all font-semibold shadow-lg hover:shadow-xl"
+                        >
+                          📺 Apri anche su Display Esterno
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stato: Winner Selected */}
+                  {currentRound.state === 'winner_selected' && currentRound.winner && (
+                    <div className="text-center">
+                      <p className="text-2xl text-green-400 mb-6">🎉 Vincitore selezionato!</p>
+                      <img
+                        src={currentRound.winner.photo}
+                        alt={currentRound.winner.name}
+                        className="w-32 h-32 rounded-full mx-auto border-4 border-yellow-400 mb-3 shadow-xl"
+                      />
+                      <p className="text-3xl font-bold text-yellow-300">{currentRound.winner.name}</p>
+                      <p className="text-gray-400 mt-4">Sta scegliendo tra 20 brani...</p>
+                    </div>
+                  )}
+
+                  {/* Stato: Song Selected */}
+                  {currentRound.state === 'song_selected' && currentRound.selectedSong && (
+                    <div>
+                      <div className="text-center mb-6">
+                        <p className="text-2xl text-green-400 mb-4">✅ Brano selezionato!</p>
+                        <img
+                          src={currentRound.winner.photo}
+                          alt={currentRound.winner.name}
+                          className="w-24 h-24 rounded-full mx-auto border-4 border-yellow-400 mb-2 shadow-xl"
+                        />
+                        <p className="text-2xl font-bold text-yellow-300">{currentRound.winner.name}</p>
+                      </div>
+                      <div className="bg-yellow-900/30 rounded-2xl p-6 border border-yellow-500/50 text-center">
+                        <Music className="w-16 h-16 text-yellow-400 mx-auto mb-3" />
+                        <p className="text-3xl font-bold text-yellow-300 mb-2">{currentRound.selectedSong.title}</p>
+                        <p className="text-xl text-yellow-200">{currentRound.selectedSong.artist}</p>
+                        {currentRound.selectedSong.chord_sheet && (
+                          <button
+                            onClick={() => {
+                              setViewingSong(currentRound.selectedSong);
+                              setSongViewContext('admin');
+                            }}
+                            className="mt-4 px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto"
+                          >
+                            <Music className="w-5 h-5" />
+                            Vedi Spartito
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pulsanti */}
+                  <div className="flex gap-4 justify-center mt-6">
+                    <button
+                      onClick={handleEndRound}
+                      className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors"
+                    >
+                      Termina Round
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Reset Round */}
+              {currentRound && currentRound.type === 'wheel' && (
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleResetRound}
+                    className="flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold transition-colors"
+                  >
+                    <RefreshCcw className="w-4 h-4" />
+                    Reset Round
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ==================== PAGINA SCELTI DALLA BAND ==================== */}
+          {selectedGameMode === 'band_picks' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-red-400 to-pink-400 mb-2 flex items-center gap-3">
+                    <Music className="w-10 h-10 text-red-400" />
+                    🎸 Scelti dalla Band
+                  </h3>
+                  <p className="text-gray-400 text-lg">Crea una scaletta personalizzata e mostra i brani uno alla volta!</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedGameMode(null)}
+                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-lg hover:shadow-xl flex items-center gap-2"
+                  >
+                    🎮 Dashboard
+                  </button>
+                  <button
+                    onClick={() => setView('home')}
+                    className="px-6 py-3 bg-gray-800/50 backdrop-blur-sm border border-gray-700 text-white rounded-xl hover:bg-gray-700/50 transition-all font-semibold flex items-center gap-2"
+                  >
+                    🏠 Home
+                  </button>
+                </div>
+              </div>
+
+              {/* Messaggio di stato */}
+              {roundMessage && (
+                <div className="bg-red-500/20 border border-red-500/30 rounded-2xl p-4 backdrop-blur-xl">
+                  <p className="text-red-300 text-center font-semibold">{roundMessage}</p>
+                </div>
+              )}
+
+              {/* Statistiche */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-red-500/20 to-pink-600/20 border border-red-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-red-400 text-sm uppercase tracking-wider mb-2">Brani in Scaletta</p>
+                  <p className="text-4xl font-bold text-white">{bandPicksList.length}</p>
+                </div>
+                <div className="bg-gradient-to-br from-pink-500/20 to-purple-600/20 border border-pink-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-pink-400 text-sm uppercase tracking-wider mb-2">Brano Corrente</p>
+                  <p className="text-4xl font-bold text-white">{currentBandPickIndex + 1} / {bandPicksList.length || '0'}</p>
+                </div>
+              </div>
+
+              {/* Gestione Scaletta */}
+              <div className="bg-gradient-to-br from-red-500/20 to-pink-600/20 border border-red-500/30 rounded-3xl p-8 backdrop-blur-xl">
+                <h4 className="text-2xl font-bold text-red-400 mb-4">📋 Gestisci Scaletta</h4>
+
+                {bandPicksList.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="bg-gray-900/50 rounded-xl p-4 max-h-96 overflow-y-auto">
+                      {bandPicksList.map((song, index) => (
+                        <div
+                          key={index}
+                          className={`flex items-center justify-between p-3 mb-2 rounded-lg transition-all ${
+                            index === currentBandPickIndex
+                              ? 'bg-red-600/30 border-2 border-red-400'
+                              : 'bg-gray-800/50 border border-gray-700'
+                          }`}
+                        >
+                          <div className="flex-1">
+                            <p className="font-bold text-white">
+                              {index + 1}. {song.title}
+                            </p>
+                            <p className="text-sm text-gray-400">{song.artist}</p>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            {song.chord_sheet && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setViewingSong(song);
+                                    setSongViewContext('admin');
+                                  }}
+                                  className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold transition-colors"
+                                  title="Apri spartito nella finestra corrente"
+                                >
+                                  📄 Spartito
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${song.id}`;
+                                    window.open(url, '_blank');
+                                  }}
+                                  className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
+                                  title="Proietta spartito su display esterno"
+                                >
+                                  📺 Proietta
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex gap-3 justify-center">
+                      <button
+                        onClick={() => setCurrentBandPickIndex(Math.max(0, currentBandPickIndex - 1))}
+                        disabled={currentBandPickIndex === 0}
+                        className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
+                      >
+                        ⬅️ Precedente
+                      </button>
+                      <button
+                        onClick={() => setCurrentBandPickIndex(Math.min(bandPicksList.length - 1, currentBandPickIndex + 1))}
+                        disabled={currentBandPickIndex >= bandPicksList.length - 1}
+                        className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all font-semibold"
+                      >
+                        Successivo ➡️
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setBandPicksList([]);
+                        setCurrentBandPickIndex(0);
+                        if (typeof localStorage !== 'undefined') {
+                          localStorage.setItem('band_picks_list', JSON.stringify([]));
+                        }
+                      }}
+                      className="w-full px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl transition-all font-semibold"
+                    >
+                      🗑️ Svuota Scaletta
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-gray-400 text-center py-8">
+                    Nessun brano in scaletta. Aggiungili dalla libreria in modalità estesa.
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ==================== PAGINA PASSA IL MICROFONO ==================== */}
+          {selectedGameMode === 'pass_mic' && (
+            <div className="space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-teal-400 mb-2 flex items-center gap-3">
+                    <Mic className="w-10 h-10 text-green-400" />
+                    🎤 Passa il Microfono
+                  </h3>
+                  <p className="text-gray-400 text-lg">Selezione casuale di partecipanti per duetti o performance!</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setSelectedGameMode(null)}
+                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-lg hover:shadow-xl flex items-center gap-2"
+                  >
+                    🎮 Dashboard
+                  </button>
+                  <button
+                    onClick={() => setView('home')}
+                    className="px-6 py-3 bg-gray-800/50 backdrop-blur-sm border border-gray-700 text-white rounded-xl hover:bg-gray-700/50 transition-all font-semibold flex items-center gap-2"
+                  >
+                    🏠 Home
+                  </button>
+                </div>
+              </div>
+
+              {/* Messaggio di stato */}
+              {roundMessage && (
+                <div className="bg-green-500/20 border border-green-500/30 rounded-2xl p-4 backdrop-blur-xl">
+                  <p className="text-green-300 text-center font-semibold">{roundMessage}</p>
+                </div>
+              )}
+
+              {/* Statistiche */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gradient-to-br from-green-500/20 to-teal-600/20 border border-green-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-green-400 text-sm uppercase tracking-wider mb-2">Partecipanti</p>
+                  <p className="text-4xl font-bold text-white">{users.length}</p>
+                  <p className="text-gray-400 text-sm mt-1">Minimo richiesto: 2</p>
+                </div>
+                <div className="bg-gradient-to-br from-teal-500/20 to-cyan-600/20 border border-teal-500/30 rounded-2xl p-6 backdrop-blur-xl">
+                  <p className="text-teal-400 text-sm uppercase tracking-wider mb-2">Stato</p>
+                  <p className="text-2xl font-bold text-white">{currentRound ? '🟢 Attivo' : '🔴 Inattivo'}</p>
+                </div>
+              </div>
+
+              {/* Controlli */}
+              <div className="bg-gradient-to-br from-green-500/20 to-teal-600/20 border border-green-500/30 rounded-3xl p-8 backdrop-blur-xl text-center">
+                <h4 className="text-2xl font-bold text-green-400 mb-4">Estrai Partecipante Casuale</h4>
+                <p className="text-gray-300 mb-6">Seleziona casualmente un partecipante dalla lista</p>
+
+                {/* Avviso round attivo */}
+                {currentRound && currentRound.type !== 'pass_mic' && (
+                  <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-4">
+                    <p className="text-red-300 font-semibold mb-3">⚠️ C'è un round attivo di tipo "{currentRound.type}"</p>
+                    <button
+                      onClick={handleEndRound}
+                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
+                    >
+                      Termina Round Corrente
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  disabled={users.length < 2 || !!currentRound}
+                  className="px-8 py-4 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-xl hover:from-green-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-lg shadow-lg hover:shadow-xl"
+                >
+                  🎲 Estrai Partecipante
+                </button>
+                {users.length < 2 && (
+                  <p className="text-red-400 text-sm mt-3">⚠️ Servono almeno 2 partecipanti</p>
+                )}
+              </div>
+
+              <p className="text-center text-gray-500 text-sm">
+                💡 Funzionalità in sviluppo - Presto disponibile!
+              </p>
+            </div>
+          )}
+
+          {/* Card Scelti dalla Band - Solo in modalità estesa */}
+          {adminViewMode === 'extended' && !selectedGameMode && (
           <div className="bg-gradient-to-br from-red-50 to-pink-50 border-2 border-red-200 rounded-2xl shadow-2xl p-6 mb-6">
             <h3 className="text-2xl font-bold text-red-900 mb-4 flex items-center gap-2">
               <Music className="w-7 h-7" />
@@ -3498,167 +4379,6 @@ export default function KaraokeApp() {
               </button>
             </div>
           </div>
-
-          {/* Card Sondaggio Brani - Sezione dedicata */}
-          <div id="poll-section" className={`bg-gradient-to-br rounded-2xl shadow-2xl p-6 mb-6 border-2 ${
-            currentRound?.isTiebreaker
-              ? 'from-yellow-50 to-orange-50 border-yellow-300'
-              : 'from-purple-50 to-pink-50 border-purple-200'
-          }`}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-2xl font-bold text-purple-900 flex items-center gap-2">
-                  <Music className="w-7 h-7" />
-                  {currentRound?.isTiebreaker ? '⚖️ Spareggio' : 'Sondaggio Brani'}
-                </h3>
-                <p className="text-sm text-gray-700 mt-1">
-                  {currentRound?.isTiebreaker
-                    ? `Votazione di spareggio tra ${currentRound.songs?.length || 0} brani ex aequo`
-                    : 'Prepara 10 brani casuali e gestisci la votazione'}
-                </p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs uppercase text-gray-500">Stato</p>
-                <p className="text-lg font-bold text-purple-900">{pollPrepared ? (currentRound?.state || 'in attesa') : 'Nessun round'}</p>
-              </div>
-            </div>
-
-            {songLibrary.length < 10 && (
-              <div className="flex items-center gap-2 text-yellow-800 bg-yellow-100 border border-yellow-200 p-3 rounded-lg mb-4">
-                <AlertTriangle className="w-5 h-5" />
-                <span>Carica almeno 10 brani per preparare il sondaggio.</span>
-              </div>
-            )}
-
-            {roundMessage && (
-              <div className="flex items-center gap-2 text-blue-900 bg-blue-50 border border-blue-200 p-3 rounded-lg mb-4">
-                <CheckCircle className="w-5 h-5 text-blue-700" />
-                <span>{roundMessage}</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-              <button
-                onClick={handlePreparePoll}
-                disabled={songLibrary.length < 10}
-                className="p-4 bg-white text-purple-900 rounded-lg border-2 border-purple-200 hover:border-purple-400 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-              >
-                Prepara round
-              </button>
-              <button
-                onClick={handleOpenVoting}
-                disabled={!pollPrepared || currentRound?.votingOpen}
-                className="p-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-              >
-                Apri votazione
-              </button>
-              <button
-                onClick={handleCloseVoting}
-                disabled={!currentRound || !currentRound.votingOpen}
-                className="p-4 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold"
-              >
-                Chiudi votazione
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between text-sm text-gray-700">
-              <span className="font-semibold">Voti ricevuti: {votesReceived}</span>
-              <button
-                onClick={handleResetRound}
-                className="flex items-center gap-2 text-purple-800 hover:text-purple-900 font-semibold"
-              >
-                <RefreshCcw className="w-4 h-4" />
-                Reset round
-              </button>
-            </div>
-          </div>
-
-          {/* Card Anteprima Display */}
-          {currentRound && (
-            <div className="bg-white rounded-2xl shadow-2xl p-6 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                  <Eye className="w-6 h-6 text-gray-600" />
-                  Anteprima Display
-                </h3>
-                <button
-                  onClick={() => setView('display')}
-                  className="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 font-semibold"
-                >
-                  Apri schermo intero
-                </button>
-              </div>
-              {!currentRound.votingOpen && currentRound.songs && (
-                <div>
-                  <p className="text-sm text-gray-600 mb-4">Round preparato, votazione non ancora aperta.</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {currentRound.songs.map(song => (
-                      <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                        <p className="font-bold">{song.title}</p>
-                        <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {currentRound.votingOpen && currentRound.songs && (
-                <div>
-                  <p className="text-sm text-gray-600 mb-4">Votazione in corso ({currentRound.votes?.length || 0}/{users.length} voti)</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {currentRound.songs.map(song => {
-                      const votes = (currentRound.votes || []).filter(v => v.songId === song.id).length;
-                      return (
-                        <div key={song.id} className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                          <p className="font-bold">{song.title}</p>
-                          <p className="text-sm text-gray-600">{song.artist}{song.year ? ` • ${song.year}` : ''}</p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                              <div
-                                className="bg-purple-500 h-full transition-all"
-                                style={{ width: `${users.length > 0 ? (votes / users.length) * 100 : 0}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-semibold text-gray-700">{votes}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Card Risultati */}
-          {roundResults && (
-            <div className="bg-gradient-to-br from-green-50 to-teal-50 rounded-2xl shadow-2xl p-6 mb-6 border-2 border-green-200">
-              <h3 className="text-2xl font-bold text-green-800 mb-4">Risultati Ultimi Round</h3>
-              {roundResults.winner && (
-                <div className="mb-4">
-                  <p className="text-sm uppercase text-gray-500">Vincitore</p>
-                  <div
-                    className={roundResults.winner.chord_sheet ? "cursor-pointer hover:bg-green-100 p-3 rounded-lg transition-colors" : ""}
-                    onClick={() => roundResults.winner.chord_sheet && setViewingSong(roundResults.winner)}
-                  >
-                    <p className="text-3xl font-bold text-green-700 flex items-center gap-2">
-                      {roundResults.winner.title}
-                      {roundResults.winner.chord_sheet && <Music className="w-6 h-6 text-amber-500" />}
-                    </p>
-                    <p className="text-lg text-gray-600">{roundResults.winner.artist}</p>
-                    {roundResults.winner.chord_sheet && (
-                      <p className="text-xs text-amber-600 mt-1">👆 Clicca per vedere lo spartito</p>
-                    )}
-                  </div>
-                </div>
-              )}
-              {roundResults.stats && <ResultList stats={roundResults.stats} compact />}
-              <button
-                onClick={() => setRoundResults(null)}
-                className="mt-4 text-sm text-gray-600 hover:text-gray-800 font-semibold"
-              >
-                Nascondi risultati
-              </button>
-            </div>
           )}
 
           <button
@@ -3803,6 +4523,32 @@ export default function KaraokeApp() {
                       </div>
                       <p className="mt-8 text-2xl text-gray-700">Preparati a cantare! 🎤🎶</p>
 
+                      {/* Pulsanti spartito */}
+                      {currentRound.selectedSong.chord_sheet && (
+                        <div className="mt-8 flex gap-4 justify-center">
+                          <button
+                            onClick={() => {
+                              setViewingSong(currentRound.selectedSong);
+                              setSongViewContext('display');
+                            }}
+                            className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors text-lg"
+                            title="Apri spartito nella finestra corrente"
+                          >
+                            📄 Spartito
+                          </button>
+                          <button
+                            onClick={() => {
+                              const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${currentRound.selectedSong.id}`;
+                              window.open(url, '_blank');
+                            }}
+                            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors text-lg"
+                            title="Proietta spartito su display esterno"
+                          >
+                            📺 Proietta
+                          </button>
+                        </div>
+                      )}
+
                       {/* Pulsanti per terminare il round */}
                       {isAdminMode && (
                         <div className="mt-12 flex gap-4 justify-center">
@@ -3873,6 +4619,32 @@ export default function KaraokeApp() {
                     Entrambi avete votato per questa canzone! Preparatevi a duettare! 🎤✨
                   </p>
 
+                  {/* Pulsanti spartito */}
+                  {currentRound.song.chord_sheet && (
+                    <div className="mt-8 flex gap-4 justify-center">
+                      <button
+                        onClick={() => {
+                          setViewingSong(currentRound.song);
+                          setSongViewContext('display');
+                        }}
+                        className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors text-lg"
+                        title="Apri spartito nella finestra corrente"
+                      >
+                        📄 Spartito
+                      </button>
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${currentRound.song.id}`;
+                          window.open(url, '_blank');
+                        }}
+                        className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors text-lg"
+                        title="Proietta spartito su display esterno"
+                      >
+                        📺 Proietta
+                      </button>
+                    </div>
+                  )}
+
                   {/* Pulsanti per terminare il round */}
                   {isAdminMode && (
                     <div className="mt-12 flex gap-4 justify-center">
@@ -3926,7 +4698,36 @@ export default function KaraokeApp() {
                         }}
                       />
                     </div>
+                    <p className="text-gray-600 text-lg mt-2">
+                      Brano {(currentRound.currentIndex || 0) + 1} di {currentRound.songs.length}
+                    </p>
                   </div>
+
+                  {/* Pulsanti spartito */}
+                  {currentRound.songs[currentRound.currentIndex || 0].chord_sheet && (
+                    <div className="mt-8 flex gap-4 justify-center">
+                      <button
+                        onClick={() => {
+                          setViewingSong(currentRound.songs[currentRound.currentIndex || 0]);
+                          setSongViewContext('display');
+                        }}
+                        className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors text-lg"
+                        title="Apri spartito nella finestra corrente"
+                      >
+                        📄 Spartito
+                      </button>
+                      <button
+                        onClick={() => {
+                          const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${currentRound.songs[currentRound.currentIndex || 0].id}`;
+                          window.open(url, '_blank');
+                        }}
+                        className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors text-lg"
+                        title="Proietta spartito su display esterno"
+                      >
+                        📺 Proietta
+                      </button>
+                    </div>
+                  )}
 
                   {/* Pulsanti navigazione (solo admin) */}
                   {isAdminMode && (
@@ -4072,36 +4873,6 @@ export default function KaraokeApp() {
             ← Torna alla Home
           </button>
         </div>
-
-        {/* ChordSheetViewer Modal */}
-        {viewingSong && (
-          <ChordSheetViewer
-            song={viewingSong}
-            onClose={() => setViewingSong(null)}
-            onUpdateSong={async (updatedSong) => {
-              if (backendMode === 'supabase' && supabase) {
-                const { error } = await supabase
-                  .from('k_songs')
-                  .update({ chord_sheet: updatedSong.chord_sheet })
-                  .eq('id', updatedSong.id);
-
-                if (error) {
-                  console.error('Errore aggiornamento spartito:', error);
-                  return;
-                }
-              }
-
-              const updatedLibrary = songLibrary.map(s =>
-                s.id === updatedSong.id ? { ...s, chord_sheet: updatedSong.chord_sheet } : s
-              );
-              setSongLibrary(updatedLibrary);
-              if (typeof localStorage !== 'undefined') {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedLibrary));
-              }
-              setViewingSong(updatedSong);
-            }}
-          />
-        )}
       </div>
     );
   }

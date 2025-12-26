@@ -328,13 +328,12 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
         .chord-sheet-content .chord {
           color: #7c3aed;
           font-weight: 700;
-          display: inline-block;
           font-size: 0.95em;
-          min-width: 3ch;
-          padding-right: 0.3ch;
-          position: relative;
-          top: -1.2em;
+          position: absolute;
+          transform: translateY(-1.5em);
+          white-space: nowrap;
           text-shadow: 0 1px 2px rgba(124, 58, 237, 0.1);
+          pointer-events: none;
         }
 
         /* Testo/Lyrics */
@@ -348,7 +347,9 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
         .chord-sheet-content .row {
           display: block;
           margin-bottom: 0.5em;
-          min-height: 1.5em;
+          min-height: 2.5em;
+          position: relative;
+          padding-top: 1.2em;
         }
 
         /* Paragrafi/Sezioni */
@@ -410,7 +411,7 @@ export default function ChordSheetViewer({ song, onClose, onUpdateSong }) {
           }
 
           .chord-sheet-content .chord {
-            top: -1em;
+            transform: translateY(-1.3em);
           }
         }
 
