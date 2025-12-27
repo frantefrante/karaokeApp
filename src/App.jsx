@@ -4107,46 +4107,43 @@ export default function KaraokeApp() {
                   )}
 
                   {/* Stato: Song Selected */}
-                  {currentRound.state === 'song_selected' && currentRound.selectedSong && (
-                    <div>
-                      <div className="text-center mb-6">
-                        <p className="text-2xl text-green-400 mb-4">✅ Brano selezionato!</p>
-                        <img
-                          src={currentRound.winner.photo}
-                          alt={currentRound.winner.name}
-                          className="w-24 h-24 rounded-full mx-auto border-4 border-yellow-400 mb-2 shadow-xl"
-                        />
-                        <p className="text-2xl font-bold text-yellow-300">{currentRound.winner.name}</p>
+                  {currentRound.state === 'song_selected' && currentRound.selectedSong && (() => {
+                    // Recupera il brano completo dalla libreria per avere il chord_sheet
+                    const fullSong = songLibrary.find(s => s.id === currentRound.selectedSong.id || s.id == currentRound.selectedSong.id) || currentRound.selectedSong;
+                    return (
+                      <div>
+                        <div className="text-center mb-6">
+                          <p className="text-2xl text-green-400 mb-4">✅ Brano selezionato!</p>
+                          <img
+                            src={currentRound.winner.photo}
+                            alt={currentRound.winner.name}
+                            className="w-24 h-24 rounded-full mx-auto border-4 border-yellow-400 mb-2 shadow-xl"
+                          />
+                          <p className="text-2xl font-bold text-yellow-300">{currentRound.winner.name}</p>
+                        </div>
+                        <div
+                          className={fullSong.chord_sheet ? "bg-yellow-900/30 rounded-2xl p-6 border border-yellow-500/50 text-center cursor-pointer hover:bg-yellow-800/30 transition-colors" : "bg-yellow-900/30 rounded-2xl p-6 border border-yellow-500/50 text-center"}
+                          onClick={() => {
+                            if (fullSong.chord_sheet) {
+                              console.log('📖 Apertura spartito vincitore ruota in proiezione:', fullSong.title);
+                              // Sincronizza spartito con tutti i dispositivi
+                              setActiveSheet(fullSong.id);
+                              // Apri in modalità proiezione in una nuova scheda
+                              const projectionUrl = `${window.location.origin}${window.location.pathname}?view=projection&songId=${fullSong.id}`;
+                              window.open(projectionUrl, '_blank');
+                            }
+                          }}
+                        >
+                          <Music className="w-16 h-16 text-yellow-400 mx-auto mb-3" />
+                          <p className="text-3xl font-bold text-yellow-300 mb-2">{fullSong.title}</p>
+                          <p className="text-xl text-yellow-200">{fullSong.artist}</p>
+                          {fullSong.chord_sheet && (
+                            <p className="text-xs text-amber-400 mt-4">👆 Clicca per proiettare lo spartito</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="bg-yellow-900/30 rounded-2xl p-6 border border-yellow-500/50 text-center">
-                        <Music className="w-16 h-16 text-yellow-400 mx-auto mb-3" />
-                        <p className="text-3xl font-bold text-yellow-300 mb-2">{currentRound.selectedSong.title}</p>
-                        <p className="text-xl text-yellow-200">{currentRound.selectedSong.artist}</p>
-                        {currentRound.selectedSong.chord_sheet && (
-                          <button
-                            onClick={() => {
-                              setViewingSong(currentRound.selectedSong);
-                              setSongViewContext('admin');
-                            }}
-                            className="mt-4 px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto"
-                          >
-                            <Music className="w-5 h-5" />
-                            Vedi Spartito
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Pulsanti */}
-                  <div className="flex gap-4 justify-center mt-6">
-                    <button
-                      onClick={handleEndRound}
-                      className="px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-semibold transition-colors"
-                    >
-                      Termina Round
-                    </button>
-                  </div>
+                    );
+                  })()}
                 </div>
               )}
 
