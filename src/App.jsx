@@ -3820,9 +3820,9 @@ export default function KaraokeApp() {
                             console.log('📖 Apertura spartito vincitore in proiezione:', roundResults.winner.title);
                             // NUOVO: Sincronizza spartito con tutti i dispositivi
                             setActiveSheet(roundResults.winner.id);
-                            // Apri in modalità proiezione invece che viewer normale
+                            // Apri in modalità proiezione in una nuova scheda
                             const projectionUrl = `${window.location.origin}${window.location.pathname}?view=projection&songId=${roundResults.winner.id}`;
-                            window.open(projectionUrl, '_blank', 'width=1920,height=1080');
+                            window.open(projectionUrl, '_blank');
                           }
                         }}
                       >
