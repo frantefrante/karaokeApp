@@ -941,6 +941,54 @@ export default function KaraokeApp() {
     return saved ? JSON.parse(saved) : [];
   });
   const [currentBandPickIndex, setCurrentBandPickIndex] = useState(0);
+
+  // Aggiorna bandPicksList quando cambia songLibrary per sincronizzare gli ID
+  useEffect(() => {
+    if (songLibrary.length === 0 || bandPicksList.length === 0) return;
+
+    const updatedBandPicks = bandPicksList.map(oldSong => {
+      // Trova il brano corrispondente per titolo e artista
+      const newSong = songLibrary.find(s =>
+        s.title.toLowerCase() === oldSong.title.toLowerCase() &&
+        s.artist.toLowerCase() === oldSong.artist.toLowerCase()
+      );
+      return newSong || oldSong; // Se non trovato, mantieni il vecchio
+    }).filter(song => songLibrary.find(s => s.id === song.id)); // Rimuovi brani che non esistono più
+
+    // Aggiorna solo se ci sono differenze negli ID
+    const hasChanges = updatedBandPicks.some((song, idx) => song.id !== bandPicksList[idx]?.id);
+    if (hasChanges && updatedBandPicks.length > 0) {
+      setBandPicksList(updatedBandPicks);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('band_picks_list', JSON.stringify(updatedBandPicks));
+      }
+    }
+  }, [songLibrary]);
+
+  // Aggiorna currentRound quando cambia songLibrary per sincronizzare gli ID
+  useEffect(() => {
+    if (!currentRound || songLibrary.length === 0) return;
+    if (!currentRound.songs || currentRound.songs.length === 0) return;
+
+    const updatedSongs = currentRound.songs.map(oldSong => {
+      // Trova il brano corrispondente per titolo e artista
+      const newSong = songLibrary.find(s =>
+        s.title.toLowerCase() === oldSong.title.toLowerCase() &&
+        s.artist.toLowerCase() === oldSong.artist.toLowerCase()
+      );
+      return newSong || oldSong; // Se non trovato, mantieni il vecchio
+    }).filter(song => songLibrary.find(s => s.id === song.id)); // Rimuovi brani che non esistono più
+
+    // Aggiorna solo se ci sono differenze negli ID
+    const hasChanges = updatedSongs.some((song, idx) => song.id !== currentRound.songs[idx]?.id);
+    if (hasChanges && updatedSongs.length > 0) {
+      setCurrentRound({
+        ...currentRound,
+        songs: updatedSongs
+      });
+    }
+  }, [songLibrary, currentRound]);
+
   const isSupabaseReady = isSupabaseConfigured;
   const [isAdminMode, setIsAdminMode] = useState(() => {
     if (typeof localStorage === 'undefined') return false;
@@ -1244,6 +1292,28 @@ export default function KaraokeApp() {
       if (songsErr) console.error('Errore fetch libreria', songsErr);
       if (songsData && songsData.length > 0) {
         setSongLibrary(songsData);
+
+        // Aggiorna bandPicksList con i nuovi ID dalla libreria
+        const savedBandPicks = typeof localStorage !== 'undefined' ? localStorage.getItem('band_picks_list') : null;
+        if (savedBandPicks) {
+          try {
+            const oldBandPicks = JSON.parse(savedBandPicks);
+            const updatedBandPicks = oldBandPicks.map(oldSong => {
+              // Trova il brano corrispondente per titolo e artista
+              const newSong = songsData.find(s =>
+                s.title.toLowerCase() === oldSong.title.toLowerCase() &&
+                s.artist.toLowerCase() === oldSong.artist.toLowerCase()
+              );
+              return newSong || oldSong; // Se non trovato, mantieni il vecchio (sarà rimosso dopo)
+            }).filter(song => songsData.find(s => s.id === song.id)); // Rimuovi brani che non esistono più
+
+            setBandPicksList(updatedBandPicks);
+            localStorage.setItem('band_picks_list', JSON.stringify(updatedBandPicks));
+          } catch (e) {
+            console.error('Errore aggiornamento band picks:', e);
+          }
+        }
+
         // Salva anche in localStorage come cache
         if (typeof localStorage !== 'undefined') {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(songsData));
@@ -2995,14 +3065,46 @@ export default function KaraokeApp() {
             <h2 className="text-4xl font-bold text-amber-400">
               🎯 Dashboard
             </h2>
-            <button
-              onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=display`, '_blank', 'width=1920,height=1080')}
-              className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg"
-              title="Apri display per proiezione"
-            >
-              <Maximize2 className="w-5 h-5" />
-              🖥️ Apri Display
-            </button>
+            {(() => {
+              let projectionSongId = null;
+              let projectionTitle = '';
+              let displayUrl = `${window.location.origin}${window.location.pathname}?view=display`;
+
+              // Determina quale spartito proiettare in base al round corrente
+              if (currentRound) {
+                if (currentRound.type === 'poll' && currentRound.selectedSong) {
+                  projectionSongId = currentRound.selectedSong.id;
+                  projectionTitle = `${currentRound.selectedSong.title} - ${currentRound.selectedSong.artist}`;
+                } else if (currentRound.type === 'duet' && currentRound.song) {
+                  projectionSongId = currentRound.song.id;
+                  projectionTitle = `${currentRound.song.title} - ${currentRound.song.artist}`;
+                } else if (currentRound.type === 'wheel' && currentRound.songs && currentRound.currentIndex !== undefined) {
+                  const song = currentRound.songs[currentRound.currentIndex || 0];
+                  projectionSongId = song.id;
+                  projectionTitle = `${song.title} - ${song.artist}`;
+                } else if (currentRound.type === 'band_picks' && currentRound.songs && currentRound.currentIndex !== undefined) {
+                  const song = currentRound.songs[currentRound.currentIndex || 0];
+                  projectionSongId = song.id;
+                  projectionTitle = `${song.title} - ${song.artist}`;
+                }
+              }
+
+              // Se c'è uno spartito da proiettare, usa la projection view
+              if (projectionSongId) {
+                displayUrl = `${window.location.origin}${window.location.pathname}?view=projection&songId=${projectionSongId}`;
+              }
+
+              return (
+                <button
+                  onClick={() => window.open(displayUrl, '_blank', 'width=1920,height=1080')}
+                  className="flex items-center gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg"
+                  title={projectionSongId ? `Proietta: ${projectionTitle}` : 'Apri display per proiezione'}
+                >
+                  <Maximize2 className="w-5 h-5" />
+                  🖥️ {projectionSongId ? 'Proietta Display' : 'Apri Display'}
+                </button>
+              );
+            })()}
           </div>
 
           {/* Stats Cards (cliccabili) - Visibili solo se non c'è una modalità di gioco selezionata */}
@@ -3645,9 +3747,9 @@ export default function KaraokeApp() {
                         onClick={() => {
                           console.log('🎵 Click su vincitore, ha spartito?', !!roundResults.winner.chord_sheet);
                           if (roundResults.winner.chord_sheet) {
-                            console.log('📖 Apertura spartito vincitore:', roundResults.winner.title);
-                            setViewingSong(roundResults.winner);
-                            setSongViewContext('admin');
+                            console.log('📖 Apertura spartito vincitore in modalità proiezione:', roundResults.winner.title);
+                            const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${roundResults.winner.id}`;
+                            window.open(url, '_blank');
                           }
                         }}
                       >
@@ -3657,7 +3759,7 @@ export default function KaraokeApp() {
                         </p>
                         <p className="text-xl text-green-200 mt-1">{roundResults.winner.artist}</p>
                         {roundResults.winner.chord_sheet && (
-                          <p className="text-xs text-amber-400 mt-2">👆 Clicca per vedere lo spartito</p>
+                          <p className="text-xs text-amber-400 mt-2">👆 Clicca per proiettare lo spartito</p>
                         )}
                       </div>
                     </div>
@@ -4648,7 +4750,12 @@ export default function KaraokeApp() {
                   <Music className="w-32 h-32 mx-auto mb-4 text-yellow-500" />
                   <div
                     className={roundResults.winner.chord_sheet ? "cursor-pointer hover:bg-yellow-50 p-4 rounded-xl transition-colors" : ""}
-                    onClick={() => roundResults.winner.chord_sheet && setViewingSong(roundResults.winner)}
+                    onClick={() => {
+                      if (roundResults.winner.chord_sheet) {
+                        const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${roundResults.winner.id}`;
+                        window.open(url, '_blank');
+                      }
+                    }}
                   >
                     <p className="text-3xl font-bold mb-2 flex items-center justify-center gap-2">
                       {roundResults.winner.title}
@@ -4656,7 +4763,7 @@ export default function KaraokeApp() {
                     </p>
                     <p className="text-xl text-gray-600">{roundResults.winner.artist}</p>
                     {roundResults.winner.chord_sheet && (
-                      <p className="text-sm text-amber-600 mt-2">👆 Clicca per vedere lo spartito</p>
+                      <p className="text-sm text-amber-600 mt-2">👆 Clicca per proiettare lo spartito</p>
                     )}
                   </div>
 
@@ -4674,10 +4781,13 @@ export default function KaraokeApp() {
                     </button>
                     {roundResults.winner.chord_sheet && (
                       <button
-                        onClick={() => setViewingSong(roundResults.winner)}
-                        className="flex items-center gap-2 bg-amber-600 text-white px-6 py-3 rounded-lg hover:bg-amber-700 font-semibold"
+                        onClick={() => {
+                          const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${roundResults.winner.id}`;
+                          window.open(url, '_blank');
+                        }}
+                        className="flex items-center gap-2 bg-purple-600 text-white px-6 py-3 rounded-lg hover:bg-purple-700 font-semibold"
                       >
-                        📄 Apri Testo
+                        📺 Proietta Spartito
                       </button>
                     )}
                   </div>
