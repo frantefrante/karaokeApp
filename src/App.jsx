@@ -3817,11 +3817,12 @@ export default function KaraokeApp() {
                         onClick={() => {
                           console.log('🎵 Click su vincitore, ha spartito?', !!roundResults.winner.chord_sheet);
                           if (roundResults.winner.chord_sheet) {
-                            console.log('📖 Apertura spartito vincitore:', roundResults.winner.title);
+                            console.log('📖 Apertura spartito vincitore in proiezione:', roundResults.winner.title);
                             // NUOVO: Sincronizza spartito con tutti i dispositivi
                             setActiveSheet(roundResults.winner.id);
-                            setViewingSong(roundResults.winner);
-                            setSongViewContext('admin');
+                            // Apri in modalità proiezione invece che viewer normale
+                            const projectionUrl = `${window.location.origin}${window.location.pathname}?view=projection&songId=${roundResults.winner.id}`;
+                            window.open(projectionUrl, '_blank', 'width=1920,height=1080');
                           }
                         }}
                       >
