@@ -1002,6 +1002,8 @@ export default function KaraokeApp() {
   const [songViewContext, setSongViewContext] = useState(null); // 'admin', 'home', etc. - per sapere dove tornare quando si chiude lo spartito
   const [compactSection, setCompactSection] = useState(null); // 'users', 'songs', 'round'
   const [selectedGameMode, setSelectedGameMode] = useState(null); // 'poll', 'duet', 'wheel', 'band_picks', 'pass_mic'
+  // NUOVO: Stato per spartito attivo sincronizzato tra dispositivi
+  const [activeSheetSongId, setActiveSheetSongId] = useState(null);
 
   // Pulisci compactSection quando viene selezionata una modalità di gioco
   useEffect(() => {
@@ -1020,6 +1022,47 @@ export default function KaraokeApp() {
       }
     }
   }, []);
+
+  // Funzione per impostare lo spartito attivo (sincronizza con tutti i dispositivi)
+  const setActiveSheet = async (songId) => {
+    console.log('📖 Impostazione spartito attivo:', songId);
+    setActiveSheetSongId(songId);
+
+    if (backendMode === 'supabase' && supabase && currentRound?.id) {
+      const updatedPayload = {
+        ...currentRound,
+        activeSheetSongId: songId
+      };
+
+      const { error } = await supabase
+        .from('k_rounds')
+        .update({ payload: updatedPayload })
+        .eq('id', currentRound.id);
+
+      if (error) {
+        console.error('❌ Errore impostazione spartito attivo:', error);
+      } else {
+        console.log('✅ Spartito attivo sincronizzato con Supabase');
+      }
+    }
+  };
+
+  const clearActiveSheet = async () => {
+    console.log('🔒 Chiusura spartito attivo');
+    setActiveSheetSongId(null);
+
+    if (backendMode === 'supabase' && supabase && currentRound?.id) {
+      const updatedPayload = {
+        ...currentRound,
+        activeSheetSongId: null
+      };
+
+      await supabase
+        .from('k_rounds')
+        .update({ payload: updatedPayload })
+        .eq('id', currentRound.id);
+    }
+  };
 
   const registerUserSupabase = async (name, photo, silent = false) => {
     if (!supabase) return null;
@@ -1436,6 +1479,12 @@ export default function KaraokeApp() {
 
         console.log('✅ Round object:', { votingOpen: roundObj?.votingOpen, state: roundObj?.state });
 
+        // NUOVO: Sincronizza lo spartito attivo
+        if (payloadObj.activeSheetSongId !== undefined) {
+          setActiveSheetSongId(payloadObj.activeSheetSongId);
+          console.log('📖 Spartito attivo sincronizzato:', payloadObj.activeSheetSongId);
+        }
+
         if (roundObj?.state === 'ended' && payloadObj.results) {
           console.log('🏁 Round terminato. View corrente:', view, 'isAdminMode:', isAdminMode);
           setRoundResults(payloadObj.results);
@@ -1505,9 +1554,10 @@ export default function KaraokeApp() {
       }
     } else if (currentRound.type === 'poll') {
       // Sondaggio: gestisci votazione
+      // CORREZIONE: Forza redirect a voting ANCHE da display quando votingOpen è true
       if (currentRound.votingOpen) {
-        if (view !== 'voting' && view !== 'display') {
-          console.log('🔄 Auto-redirect a voting (poll aperto)');
+        if (view !== 'voting') {
+          console.log('🔄 Auto-redirect a voting (poll aperto) - anche da display!');
           setView('voting');
         }
       } else if (view === 'voting') {
@@ -1820,6 +1870,7 @@ export default function KaraokeApp() {
         setRoundResults(results);
         setCurrentRound(null);
         setVotesReceived(0);
+        setActiveSheetSongId(null); // NUOVO: Pulisci spartito attivo
         setRoundMessage('Votazione chiusa, risultati pronti.');
         // Non cambiare view, mostra i risultati nella dashboard
       }
@@ -1834,6 +1885,7 @@ export default function KaraokeApp() {
     setRoundMessage('Round azzerato.');
     setCurrentRound(null);
     setVotesReceived(0);
+    setActiveSheetSongId(null); // NUOVO: Pulisci spartito attivo
   };
 
   const handleResetParticipants = async () => {
@@ -2503,6 +2555,8 @@ export default function KaraokeApp() {
         onClose={() => {
           console.log('❌ Chiusura ChordSheetViewer');
           setViewingSong(null);
+          // NUOVO: Chiudi anche lo spartito condiviso
+          clearActiveSheet();
           // Se lo spartito è stato aperto dalla dashboard admin, resta lì
           if (songViewContext === 'admin') {
             // Non cambiare view, rimani in admin
@@ -2965,6 +3019,22 @@ export default function KaraokeApp() {
       setView('join');
       return null;
     }
+
+    // NUOVO: Mostra spartito se l'admin lo ha attivato
+    if (activeSheetSongId && !isAdminMode) {
+      const sheetSong = songLibrary.find(s => s.id === activeSheetSongId || s.id == activeSheetSongId);
+      if (sheetSong && sheetSong.chord_sheet) {
+        return (
+          <div className="min-h-screen bg-black">
+            <ProjectionView song={sheetSong} />
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-full shadow-xl">
+              📖 Spartito condiviso dall'organizzatore
+            </div>
+          </div>
+        );
+      }
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center">
@@ -3747,9 +3817,11 @@ export default function KaraokeApp() {
                         onClick={() => {
                           console.log('🎵 Click su vincitore, ha spartito?', !!roundResults.winner.chord_sheet);
                           if (roundResults.winner.chord_sheet) {
-                            console.log('📖 Apertura spartito vincitore in modalità proiezione:', roundResults.winner.title);
-                            const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${roundResults.winner.id}`;
-                            window.open(url, '_blank');
+                            console.log('📖 Apertura spartito vincitore:', roundResults.winner.title);
+                            // NUOVO: Sincronizza spartito con tutti i dispositivi
+                            setActiveSheet(roundResults.winner.id);
+                            setViewingSong(roundResults.winner);
+                            setSongViewContext('admin');
                           }
                         }}
                       >
@@ -4326,6 +4398,21 @@ export default function KaraokeApp() {
   }
 
   if (view === 'display') {
+    // NUOVO: Mostra spartito se l'admin lo ha attivato (anche in display)
+    if (activeSheetSongId && !isAdminMode) {
+      const sheetSong = songLibrary.find(s => s.id === activeSheetSongId || s.id == activeSheetSongId);
+      if (sheetSong && sheetSong.chord_sheet) {
+        return (
+          <div className="min-h-screen bg-black">
+            <ProjectionView song={sheetSong} />
+            <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-full shadow-xl">
+              📖 Spartito condiviso dall'organizzatore
+            </div>
+          </div>
+        );
+      }
+    }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-900 to-indigo-900 p-8">
         <div className="max-w-6xl mx-auto">
