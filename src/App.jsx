@@ -1577,12 +1577,6 @@ export default function KaraokeApp() {
         console.log('🔄 Auto-redirect a display (band picks attivo)');
         setView('display');
       }
-    } else if (currentRound.type === 'pass_mic') {
-      // Passa il Microfono: mostra display
-      if (view !== 'display' && view !== 'waiting') {
-        console.log('🔄 Auto-redirect a display (passa il microfono attivo)');
-        setView('display');
-      }
     }
   }, [currentRound, currentUser, view, roundResults]);
 
@@ -2343,42 +2337,6 @@ export default function KaraokeApp() {
     setCurrentBandPickIndex(prevIndex);
   };
 
-  const handleStartPassMic = async () => {
-    if (users.length === 0) {
-      setRoundMessage('❌ Nessun partecipante registrato!');
-      return;
-    }
-
-    // Seleziona un partecipante a caso
-    const randomUser = users[Math.floor(Math.random() * users.length)];
-
-    const payload = {
-      type: 'pass_mic',
-      selectedUser: randomUser,
-      state: 'showing'
-    };
-
-    if (backendMode === 'supabase') {
-      const { data, error } = await supabase
-        .from('k_rounds')
-        .insert({ category: 'pass_mic', state: 'showing', payload })
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Errore creazione passa il microfono', error);
-        setRoundMessage('❌ Errore nella selezione del partecipante.');
-        return;
-      }
-
-      setCurrentRound({ ...payload, id: data.id });
-    } else {
-      setCurrentRound({ ...payload, id: Date.now() });
-    }
-
-    setRoundMessage(`🎤 Selezionato: ${randomUser.name}`);
-    setView('display');
-  };
 
   const handleStartRound = (category) => {
     if (category === 'poll') {
@@ -2395,10 +2353,6 @@ export default function KaraokeApp() {
     }
     if (category === 'band_picks') {
       handleStartBandPicks();
-      return;
-    }
-    if (category === 'pass_mic') {
-      handleStartPassMic();
       return;
     }
     setRoundMessage('Modalità extra non ancora disponibili.');
@@ -2428,7 +2382,7 @@ export default function KaraokeApp() {
       return;
     }
 
-    // Per tutti gli altri tipi di round (wheel, duet, band_picks, pass_mic)
+    // Per tutti gli altri tipi di round (wheel, duet, band_picks)
     if (backendMode === 'supabase' && supabase) {
       console.log('🗑️ Eliminazione round da Supabase...');
       const { error } = await supabase
@@ -2499,7 +2453,7 @@ export default function KaraokeApp() {
     }
 
     if (projectionSong && projectionSong.chord_sheet) {
-      return <ProjectionView song={projectionSong} />;
+      return <ProjectionView song={projectionSong} users={users} />;
     } else {
       // Brano non trovato o senza spartito
       const songFound = songId ? songLibrary.find(s => s.id == songId) : null;
@@ -2875,8 +2829,7 @@ export default function KaraokeApp() {
       { id: 'duet', name: 'Duetti', description: 'Sfida in coppia' },
       { id: 'wheel', name: 'Ruota della Fortuna', description: 'Selezione casuale' },
       { id: 'free_choice', name: 'Scelta Libera', description: 'Scegli tu il brano' },
-      { id: 'year', name: 'Categoria per Anno', description: 'Brani per anno' },
-      { id: 'pass_mic', name: 'Passa il Microfono', description: 'Catena di cantanti' }
+      { id: 'year', name: 'Categoria per Anno', description: 'Brani per anno' }
     ];
     const activeId = currentRound?.type;
 
@@ -3026,7 +2979,7 @@ export default function KaraokeApp() {
       if (sheetSong && sheetSong.chord_sheet) {
         return (
           <div className="min-h-screen bg-black">
-            <ProjectionView song={sheetSong} />
+            <ProjectionView song={sheetSong} users={users} />
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-full shadow-xl">
               📖 Spartito condiviso dall'organizzatore
             </div>
@@ -3122,8 +3075,7 @@ export default function KaraokeApp() {
       { id: 'poll', name: 'Sondaggio Brani', icon: Music, color: 'from-purple-500 to-pink-500' },
       { id: 'duet', name: 'Duetti', icon: Users, color: 'from-blue-500 to-cyan-500' },
       { id: 'wheel', name: 'Ruota della Fortuna', icon: Disc, color: 'from-yellow-500 to-orange-500' },
-      { id: 'band_picks', name: 'Scelti dalla Band', icon: Music, color: 'from-red-500 to-pink-500' },
-      { id: 'pass_mic', name: 'Passa il Microfono', icon: Mic, color: 'from-pink-500 to-rose-500' }
+      { id: 'band_picks', name: 'Scelti dalla Band', icon: Music, color: 'from-red-500 to-pink-500' }
     ];
     const pollPrepared = currentRound && currentRound.type === 'poll';
 
@@ -4300,89 +4252,6 @@ export default function KaraokeApp() {
             </div>
           )}
 
-          {/* ==================== PAGINA PASSA IL MICROFONO ==================== */}
-          {selectedGameMode === 'pass_mic' && (
-            <div className="space-y-6">
-              {/* Header */}
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-teal-400 mb-2 flex items-center gap-3">
-                    <Mic className="w-10 h-10 text-green-400" />
-                    🎤 Passa il Microfono
-                  </h3>
-                  <p className="text-gray-400 text-lg">Selezione casuale di partecipanti per duetti o performance!</p>
-                </div>
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => setSelectedGameMode(null)}
-                    className="px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:from-purple-700 hover:to-pink-700 transition-all font-semibold shadow-lg hover:shadow-xl flex items-center gap-2"
-                  >
-                    🎮 Dashboard
-                  </button>
-                  <button
-                    onClick={() => setView('home')}
-                    className="px-6 py-3 bg-gray-800/50 backdrop-blur-sm border border-gray-700 text-white rounded-xl hover:bg-gray-700/50 transition-all font-semibold flex items-center gap-2"
-                  >
-                    🏠 Home
-                  </button>
-                </div>
-              </div>
-
-              {/* Messaggio di stato */}
-              {roundMessage && (
-                <div className="bg-green-500/20 border border-green-500/30 rounded-2xl p-4 backdrop-blur-xl">
-                  <p className="text-green-300 text-center font-semibold">{roundMessage}</p>
-                </div>
-              )}
-
-              {/* Statistiche */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gradient-to-br from-green-500/20 to-teal-600/20 border border-green-500/30 rounded-2xl p-6 backdrop-blur-xl">
-                  <p className="text-green-400 text-sm uppercase tracking-wider mb-2">Partecipanti</p>
-                  <p className="text-4xl font-bold text-white">{users.length}</p>
-                  <p className="text-gray-400 text-sm mt-1">Minimo richiesto: 2</p>
-                </div>
-                <div className="bg-gradient-to-br from-teal-500/20 to-cyan-600/20 border border-teal-500/30 rounded-2xl p-6 backdrop-blur-xl">
-                  <p className="text-teal-400 text-sm uppercase tracking-wider mb-2">Stato</p>
-                  <p className="text-2xl font-bold text-white">{currentRound ? '🟢 Attivo' : '🔴 Inattivo'}</p>
-                </div>
-              </div>
-
-              {/* Controlli */}
-              <div className="bg-gradient-to-br from-green-500/20 to-teal-600/20 border border-green-500/30 rounded-3xl p-8 backdrop-blur-xl text-center">
-                <h4 className="text-2xl font-bold text-green-400 mb-4">Estrai Partecipante Casuale</h4>
-                <p className="text-gray-300 mb-6">Seleziona casualmente un partecipante dalla lista</p>
-
-                {/* Avviso round attivo */}
-                {currentRound && currentRound.type !== 'pass_mic' && (
-                  <div className="bg-red-500/20 border border-red-500/30 rounded-xl p-4 mb-4">
-                    <p className="text-red-300 font-semibold mb-3">⚠️ C'è un round attivo di tipo "{currentRound.type}"</p>
-                    <button
-                      onClick={handleEndRound}
-                      className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold transition-colors"
-                    >
-                      Termina Round Corrente
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  disabled={users.length < 2 || !!currentRound}
-                  className="px-8 py-4 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-xl hover:from-green-700 hover:to-teal-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-bold text-lg shadow-lg hover:shadow-xl"
-                >
-                  🎲 Estrai Partecipante
-                </button>
-                {users.length < 2 && (
-                  <p className="text-red-400 text-sm mt-3">⚠️ Servono almeno 2 partecipanti</p>
-                )}
-              </div>
-
-              <p className="text-center text-gray-500 text-sm">
-                💡 Funzionalità in sviluppo - Presto disponibile!
-              </p>
-            </div>
-          )}
-
 
           <button
             onClick={() => setView('home')}
@@ -4402,7 +4271,7 @@ export default function KaraokeApp() {
       if (sheetSong && sheetSong.chord_sheet) {
         return (
           <div className="min-h-screen bg-black">
-            <ProjectionView song={sheetSong} />
+            <ProjectionView song={sheetSong} users={users} />
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-full shadow-xl">
               📖 Spartito condiviso dall'organizzatore
             </div>
@@ -4431,7 +4300,6 @@ export default function KaraokeApp() {
                 {currentRound.type === 'duet' && '🎭 Duetto'}
                 {currentRound.type === 'wheel' && '🎰 Ruota della Fortuna'}
                 {currentRound.type === 'band_picks' && '🎸 Scelti dalla Band'}
-                {currentRound.type === 'pass_mic' && '🎤 Passa il Microfono'}
               </h2>
               {currentRound.isTiebreaker && (
                 <div className="mb-6 bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 text-center">
@@ -4776,53 +4644,6 @@ export default function KaraokeApp() {
                 </div>
               )}
 
-              {currentRound.type === 'pass_mic' && currentRound.selectedUser && (
-                <div className="text-center py-12">
-                  <h2 className="text-5xl font-bold text-pink-600 mb-12">🎤 Passa il Microfono! 🎤</h2>
-
-                  {/* Utente selezionato */}
-                  <div className="mb-8">
-                    <p className="text-2xl text-gray-600 mb-6">È il turno di...</p>
-                    <img
-                      src={currentRound.selectedUser.photo}
-                      alt={currentRound.selectedUser.name}
-                      className="w-56 h-56 rounded-full mx-auto border-8 border-pink-400 mb-6 shadow-2xl"
-                    />
-                    <p className="text-6xl font-bold text-gray-800 mb-4">{currentRound.selectedUser.name}</p>
-                  </div>
-
-                  <div className="bg-gradient-to-r from-pink-100 via-purple-100 to-pink-100 rounded-3xl p-10 max-w-3xl mx-auto border-4 border-pink-300 shadow-2xl">
-                    <Mic className="w-28 h-28 text-pink-600 mx-auto mb-6" />
-                    <p className="text-3xl text-gray-700 font-semibold">
-                      Scegli il brano che preferisci e preparati a cantare!
-                    </p>
-                  </div>
-
-                  {/* Pulsanti admin */}
-                  {isAdminMode && (
-                    <div className="mt-12 flex gap-4 justify-center">
-                      <button
-                        onClick={handleStartPassMic}
-                        className="bg-pink-600 text-white px-8 py-4 rounded-lg hover:bg-pink-700 font-semibold text-lg"
-                      >
-                        Seleziona Nuovo Partecipante
-                      </button>
-                      <button
-                        onClick={handleEndRound}
-                        className="bg-red-600 text-white px-8 py-4 rounded-lg hover:bg-red-700 font-semibold text-lg"
-                      >
-                        Termina Round
-                      </button>
-                      <button
-                        onClick={() => setView('admin')}
-                        className="bg-blue-600 text-white px-8 py-4 rounded-lg hover:bg-blue-700 font-semibold text-lg"
-                      >
-                        Pannello Organizzatore
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
           )}
 

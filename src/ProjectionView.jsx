@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import ChordSheetJS from 'chordsheetjs';
-import { Play, Pause, Sun, Moon, Youtube } from 'lucide-react';
+import { Play, Pause, Sun, Moon, Youtube, Mic, X } from 'lucide-react';
 
 // Icona Spotify personalizzata
 const SpotifyIcon = ({ className }) => (
@@ -9,10 +9,11 @@ const SpotifyIcon = ({ className }) => (
   </svg>
 );
 
-export default function ProjectionView({ song }) {
+export default function ProjectionView({ song, users = [] }) {
   const [transpose, setTranspose] = useState(0);
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
+  const [selectedUser, setSelectedUser] = useState(null);
 
   // Carica la preferenza tema da localStorage, default = light mode
   const [darkMode, setDarkMode] = useState(() => {
@@ -105,6 +106,23 @@ export default function ProjectionView({ song }) {
     const query = encodeURIComponent(`${song.title} ${song.artist}`);
     window.open(`https://www.youtube.com/results?search_query=${query}`, '_blank');
   };
+
+  const selectRandomUser = () => {
+    if (users.length === 0) return;
+    const randomUser = users[Math.floor(Math.random() * users.length)];
+    setSelectedUser(randomUser);
+  };
+
+  // Auto-hide dell'utente selezionato dopo 5 secondi
+  useEffect(() => {
+    if (selectedUser) {
+      const timer = setTimeout(() => {
+        setSelectedUser(null);
+      }, 5000); // 5 secondi
+
+      return () => clearTimeout(timer);
+    }
+  }, [selectedUser]);
 
   return (
     <div
@@ -204,8 +222,17 @@ export default function ProjectionView({ song }) {
               )}
             </div>
 
-            {/* Link esterni */}
+            {/* Link esterni e Passa Microfono */}
             <div className="flex gap-2 ml-auto">
+              <button
+                onClick={selectRandomUser}
+                disabled={users.length === 0}
+                className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={users.length === 0 ? "Nessun partecipante" : "Passa il Microfono"}
+              >
+                <Mic className="w-5 h-5" />
+                <span className="hidden sm:inline">Passa Mic</span>
+              </button>
               <button
                 onClick={openSpotify}
                 className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
@@ -254,6 +281,37 @@ export default function ProjectionView({ song }) {
           </div>
         )}
       </div>
+
+      {/* Overlay utente selezionato - posizionato a destra sotto toolbar */}
+      {selectedUser && (
+        <div className="fixed top-36 right-8 z-50 pointer-events-auto group">
+          <div className="bg-pink-600/95 text-white rounded-2xl px-8 py-6 shadow-2xl border-4 border-white relative">
+            {/* Pulsante chiudi - visibile solo al hover */}
+            <button
+              onClick={() => setSelectedUser(null)}
+              className="absolute top-2 right-2 bg-white/20 hover:bg-white/30 rounded-full p-1 transition-all opacity-0 group-hover:opacity-100"
+              title="Chiudi"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-4">
+              <Mic className="w-12 h-12" />
+              <div>
+                <p className="text-lg font-semibold mb-2">🎤 È il turno di:</p>
+                {selectedUser.photo && (
+                  <img
+                    src={selectedUser.photo}
+                    alt={selectedUser.name}
+                    className="w-20 h-20 rounded-full mx-auto border-3 border-white mb-3 shadow-xl"
+                  />
+                )}
+                <p className="text-3xl font-bold">{selectedUser.name}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stili minimi per testo preformattato */}
       <style>{`
