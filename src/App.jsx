@@ -2252,7 +2252,8 @@ export default function KaraokeApp() {
 
       setCurrentRound({ ...payload, id: data.id });
       setRoundMessage(`✅ Duetto preparato: ${duet.user1.name} + ${duet.user2.name} → ${duet.song.title}`);
-      setView('display');
+      setSelectedGameMode('duet');
+      setView('admin');
     } else {
       const round = {
         id: Date.now(),
@@ -2266,7 +2267,8 @@ export default function KaraokeApp() {
 
       setCurrentRound(round);
       setRoundMessage(`✅ Duetto preparato: ${duet.user1.name} + ${duet.user2.name} → ${duet.song.title}`);
-      setView('display');
+      setSelectedGameMode('duet');
+      setView('admin');
     }
   };
 
@@ -3930,13 +3932,17 @@ export default function KaraokeApp() {
                     {currentRound.song.chord_sheet && (
                       <button
                         onClick={() => {
-                          setViewingSong(currentRound.song);
-                          setSongViewContext('admin');
+                          const fullSong = songLibrary.find(s => s.id === currentRound.song.id || s.id == currentRound.song.id) || currentRound.song;
+                          if (fullSong.chord_sheet) {
+                            setActiveSheet(fullSong.id);
+                            const projectionUrl = `${window.location.origin}${window.location.pathname}?view=projection&songId=${fullSong.id}`;
+                            window.open(projectionUrl, '_blank');
+                          }
                         }}
-                        className="mt-4 px-6 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto"
+                        className="mt-4 px-6 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors flex items-center gap-2 mx-auto"
                       >
                         <Music className="w-5 h-5" />
-                        Vedi Spartito
+                        Proietta
                       </button>
                     )}
                   </div>
@@ -4554,18 +4560,12 @@ export default function KaraokeApp() {
                     <div className="mt-8 flex gap-4 justify-center">
                       <button
                         onClick={() => {
-                          setViewingSong(currentRound.song);
-                          setSongViewContext('display');
-                        }}
-                        className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors text-lg"
-                        title="Apri spartito nella finestra corrente"
-                      >
-                        📄 Spartito
-                      </button>
-                      <button
-                        onClick={() => {
-                          const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${currentRound.song.id}`;
-                          window.open(url, '_blank');
+                          const fullSong = songLibrary.find(s => s.id === currentRound.song.id || s.id == currentRound.song.id) || currentRound.song;
+                          if (fullSong.chord_sheet) {
+                            setActiveSheet(fullSong.id);
+                            const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${fullSong.id}`;
+                            window.open(url, '_blank');
+                          }
                         }}
                         className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors text-lg"
                         title="Proietta spartito su display esterno"
