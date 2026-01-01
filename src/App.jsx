@@ -4,6 +4,7 @@ import { supabase, isSupabaseConfigured } from './supabaseClient';
 import { Camera, Music, Users, Play, Trophy, Disc, Mic, Upload, AlertTriangle, CheckCircle, RefreshCcw, Eye, Maximize2 } from 'lucide-react';
 import ChordSheetViewer from './ChordSheetViewer';
 import ProjectionView from './ProjectionView';
+import SongImporter from './SongImporter';
 
 const STORAGE_KEY = 'karaoke_songs';
 const CURRENT_USER_KEY = 'karaoke_current_user';
@@ -919,6 +920,7 @@ export default function KaraokeApp() {
   const [songSearchQuery, setSongSearchQuery] = useState('');
   const [editingSongId, setEditingSongId] = useState(null);
   const [showAddSongForm, setShowAddSongForm] = useState(false);
+  const [showSongImporter, setShowSongImporter] = useState(false);
   const [importMessage, setImportMessage] = useState('');
   const [roundMessage, setRoundMessage] = useState('');
   const [votesReceived, setVotesReceived] = useState(0);
@@ -3266,7 +3268,15 @@ export default function KaraokeApp() {
                   title="Importa spartiti ChordPro (.cho)"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  Importa
+                  Importa .cho
+                </button>
+                <button
+                  onClick={() => setShowSongImporter(true)}
+                  className="px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg font-medium transition-all shadow-sm flex items-center gap-1.5 text-xs whitespace-nowrap"
+                  title="Importa brano da internet"
+                >
+                  <Music className="w-3.5 h-3.5" />
+                  Importa da Web
                 </button>
               </div>
 
@@ -4260,6 +4270,14 @@ export default function KaraokeApp() {
             ← Torna alla Home
           </button>
         </div>
+
+        {/* SongImporter Modal */}
+        {showSongImporter && (
+          <SongImporter
+            onClose={() => setShowSongImporter(false)}
+            onImport={handleAddSong}
+          />
+        )}
       </div>
     );
   }
