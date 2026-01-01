@@ -928,6 +928,7 @@ export default function KaraokeApp() {
   const choFilesInputRef = useRef(null);
   const votesChannelRef = useRef(null);
   const registeredOnceRef = useRef(false);
+  const lastRoundRef = useRef(null); // Tiene traccia dell'ultimo round (anche se terminato) per sincronizzare lo spartito
   const [backendMode, setBackendMode] = useState(isSupabaseConfigured ? 'supabase' : 'mock');
   const isProd = typeof window !== 'undefined' && !window.location.hostname.includes('localhost');
 
@@ -1030,20 +1031,24 @@ export default function KaraokeApp() {
     console.log('📖 Impostazione spartito attivo:', songId);
     setActiveSheetSongId(songId);
 
-    if (backendMode === 'supabase' && supabase && currentRound?.id) {
+    const targetRoundId = currentRound?.id || lastRoundRef.current?.id;
+    const basePayload = currentRound || lastRoundRef.current?.payload;
+
+    if (backendMode === 'supabase' && supabase && targetRoundId) {
       const updatedPayload = {
-        ...currentRound,
+        ...(basePayload || {}),
         activeSheetSongId: songId
       };
 
       const { error } = await supabase
         .from('k_rounds')
         .update({ payload: updatedPayload })
-        .eq('id', currentRound.id);
+        .eq('id', targetRoundId);
 
       if (error) {
         console.error('❌ Errore impostazione spartito attivo:', error);
       } else {
+        lastRoundRef.current = { id: targetRoundId, payload: updatedPayload };
         console.log('✅ Spartito attivo sincronizzato con Supabase');
       }
     }
@@ -1053,16 +1058,20 @@ export default function KaraokeApp() {
     console.log('🔒 Chiusura spartito attivo');
     setActiveSheetSongId(null);
 
-    if (backendMode === 'supabase' && supabase && currentRound?.id) {
+    const targetRoundId = currentRound?.id || lastRoundRef.current?.id;
+    const basePayload = currentRound || lastRoundRef.current?.payload;
+
+    if (backendMode === 'supabase' && supabase && targetRoundId) {
       const updatedPayload = {
-        ...currentRound,
+        ...(basePayload || {}),
         activeSheetSongId: null
       };
 
       await supabase
         .from('k_rounds')
         .update({ payload: updatedPayload })
-        .eq('id', currentRound.id);
+        .eq('id', targetRoundId);
+      lastRoundRef.current = { id: targetRoundId, payload: updatedPayload };
     }
   };
 
@@ -1224,7 +1233,11 @@ export default function KaraokeApp() {
         .from('k_rounds')
         .update({ state: 'ended', payload })
         .eq('id', currentRound.id);
-      if (error) console.error('Errore closeVoting', error);
+      if (error) {
+        console.error('Errore closeVoting', error);
+      } else {
+        lastRoundRef.current = { id: currentRound.id, payload };
+      }
       setRoundResults(results);
       setCurrentRound(null);
       setVotesReceived(0);
@@ -1389,6 +1402,7 @@ export default function KaraokeApp() {
         const r = roundData[0];
         const payload = r.payload || {};
         const songs = payload.songs || [];
+        lastRoundRef.current = { id: r.id, payload };
         setCurrentRound({ ...payload, id: r.id, state: r.state, category: r.category, type: payload.type || r.category || 'poll', votingOpen: payload.votingOpen || false, songs, votes: [] });
         const { data: votesData } = await supabase.from('k_votes').select('*').eq('round_id', r.id);
         if (votesData) {
@@ -1468,6 +1482,7 @@ export default function KaraokeApp() {
         const r = payload.new;
         const payloadObj = r?.payload || {};
         const songs = payloadObj.songs || [];
+        lastRoundRef.current = { id: r.id, payload: payloadObj };
         const roundObj = r ? {
           ...payloadObj,
           id: r.id,
@@ -2455,7 +2470,8 @@ export default function KaraokeApp() {
     }
 
     if (projectionSong && projectionSong.chord_sheet) {
-      return <ProjectionView song={projectionSong} users={users} />;
+      // La vista projection viene aperta dall'organizzatore: mantieni i controlli completi
+      return <ProjectionView song={projectionSong} users={users} showControls />;
     } else {
       // Brano non trovato o senza spartito
       const songFound = songId ? songLibrary.find(s => s.id == songId) : null;
@@ -2981,7 +2997,12 @@ export default function KaraokeApp() {
       if (sheetSong && sheetSong.chord_sheet) {
         return (
           <div className="min-h-screen bg-black">
-            <ProjectionView song={sheetSong} users={users} />
+            <ProjectionView
+              song={sheetSong}
+              users={users}
+              showControls={false}
+              onBackHome={() => setView('home')}
+            />
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-full shadow-xl">
               📖 Spartito condiviso dall'organizzatore
             </div>
@@ -4289,7 +4310,12 @@ export default function KaraokeApp() {
       if (sheetSong && sheetSong.chord_sheet) {
         return (
           <div className="min-h-screen bg-black">
-            <ProjectionView song={sheetSong} users={users} />
+            <ProjectionView
+              song={sheetSong}
+              users={users}
+              showControls={false}
+              onBackHome={() => setView('home')}
+            />
             <div className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-purple-600 text-white px-6 py-3 rounded-full shadow-xl">
               📖 Spartito condiviso dall'organizzatore
             </div>

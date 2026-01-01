@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useLayoutEffect } from 'react';
 import ChordSheetJS from 'chordsheetjs';
-import { Play, Pause, Sun, Moon, Youtube, Mic, X } from 'lucide-react';
+import { Play, Pause, Sun, Moon, Youtube, Mic, X, Home } from 'lucide-react';
 
 // Icona Spotify personalizzata
 const SpotifyIcon = ({ className }) => (
@@ -9,7 +9,12 @@ const SpotifyIcon = ({ className }) => (
   </svg>
 );
 
-export default function ProjectionView({ song, users = [] }) {
+export default function ProjectionView({
+  song,
+  users = [],
+  showControls = true,
+  onBackHome
+}) {
   const [transpose, setTranspose] = useState(0);
   const [autoScroll, setAutoScroll] = useState(false);
   const [scrollSpeed, setScrollSpeed] = useState(1);
@@ -124,6 +129,14 @@ export default function ProjectionView({ song, users = [] }) {
     }
   }, [selectedUser]);
 
+  const handleBackHome = () => {
+    if (onBackHome) {
+      onBackHome();
+    } else {
+      window.location.href = `${window.location.origin}${window.location.pathname}`;
+    }
+  };
+
   return (
     <div
       ref={contentRef}
@@ -151,106 +164,122 @@ export default function ProjectionView({ song, users = [] }) {
             </button>
           </div>
 
-          {/* Seconda riga: Controlli */}
-          <div className="flex flex-wrap items-center gap-4">
-            {/* Trasposizione */}
-            <div className="flex items-center gap-2">
-              <span className={`text-sm font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Tonalità:</span>
-              <button
-                onClick={() => setTranspose(Math.max(-11, transpose - 1))}
-                className={`px-3 py-1 rounded-lg font-bold ${
-                  darkMode
-                    ? 'bg-gray-800 hover:bg-gray-700 text-white'
-                    : 'bg-gray-200 hover:bg-gray-300 text-black'
-                }`}
-              >
-                -
-              </button>
-              <span className={`min-w-[3rem] text-center font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-                {transpose > 0 ? `+${transpose}` : transpose}
-              </span>
-              <button
-                onClick={() => setTranspose(Math.min(11, transpose + 1))}
-                className={`px-3 py-1 rounded-lg font-bold ${
-                  darkMode
-                    ? 'bg-gray-800 hover:bg-gray-700 text-white'
-                    : 'bg-gray-200 hover:bg-gray-300 text-black'
-                }`}
-              >
-                +
-              </button>
-              {transpose !== 0 && (
+          {/* Seconda riga: Controlli (solo per organizzatore) */}
+          {showControls ? (
+            <div className="flex flex-wrap items-center gap-4">
+              {/* Trasposizione */}
+              <div className="flex items-center gap-2">
+                <span className={`text-sm font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>Tonalità:</span>
                 <button
-                  onClick={() => setTranspose(0)}
-                  className={`px-3 py-1 text-sm rounded-lg ${
+                  onClick={() => setTranspose(Math.max(-11, transpose - 1))}
+                  className={`px-3 py-1 rounded-lg font-bold ${
                     darkMode
-                      ? 'bg-gray-800 hover:bg-gray-700 text-gray-400'
-                      : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                      ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300 text-black'
                   }`}
                 >
-                  Reset
+                  -
                 </button>
-              )}
-            </div>
+                <span className={`min-w-[3rem] text-center font-bold ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                  {transpose > 0 ? `+${transpose}` : transpose}
+                </span>
+                <button
+                  onClick={() => setTranspose(Math.min(11, transpose + 1))}
+                  className={`px-3 py-1 rounded-lg font-bold ${
+                    darkMode
+                      ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                      : 'bg-gray-200 hover:bg-gray-300 text-black'
+                  }`}
+                >
+                  +
+                </button>
+                {transpose !== 0 && (
+                  <button
+                    onClick={() => setTranspose(0)}
+                    className={`px-3 py-1 text-sm rounded-lg ${
+                      darkMode
+                        ? 'bg-gray-800 hover:bg-gray-700 text-gray-400'
+                        : 'bg-gray-200 hover:bg-gray-300 text-gray-600'
+                    }`}
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
 
-            {/* Auto-scroll */}
-            <div className="flex items-center gap-2">
+              {/* Auto-scroll */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setAutoScroll(!autoScroll)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
+                    autoScroll
+                      ? 'bg-green-600 text-white shadow-lg'
+                      : darkMode
+                        ? 'bg-gray-800 hover:bg-gray-700 text-gray-300'
+                        : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                  }`}
+                >
+                  {autoScroll ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  <span>Scroll</span>
+                </button>
+                {autoScroll && (
+                  <input
+                    type="range"
+                    min="0.5"
+                    max="5"
+                    step="0.5"
+                    value={scrollSpeed}
+                    onChange={(e) => setScrollSpeed(parseFloat(e.target.value))}
+                    className="w-24"
+                    title={`Velocità: ${scrollSpeed}x`}
+                  />
+                )}
+              </div>
+
+              {/* Link esterni e Passa Microfono */}
+              <div className="flex gap-2 ml-auto">
+                <button
+                  onClick={selectRandomUser}
+                  disabled={users.length === 0}
+                  className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={users.length === 0 ? "Nessun partecipante" : "Passa il Microfono"}
+                >
+                  <Mic className="w-5 h-5" />
+                  <span className="hidden sm:inline">Passa Mic</span>
+                </button>
+                <button
+                  onClick={openSpotify}
+                  className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                  title="Apri su Spotify"
+                >
+                  <SpotifyIcon className="w-5 h-5" />
+                  <span className="hidden sm:inline">Spotify</span>
+                </button>
+                <button
+                  onClick={openYouTube}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                  title="Apri su YouTube"
+                >
+                  <Youtube className="w-5 h-5" />
+                  <span className="hidden sm:inline">YouTube</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-end">
               <button
-                onClick={() => setAutoScroll(!autoScroll)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold transition-all ${
-                  autoScroll
-                    ? 'bg-green-600 text-white shadow-lg'
-                    : darkMode
-                      ? 'bg-gray-800 hover:bg-gray-700 text-gray-300'
-                      : 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+                onClick={handleBackHome}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-semibold ${
+                  darkMode
+                    ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                    : 'bg-gray-200 hover:bg-gray-300 text-gray-800'
                 }`}
               >
-                {autoScroll ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                <span>Scroll</span>
-              </button>
-              {autoScroll && (
-                <input
-                  type="range"
-                  min="0.5"
-                  max="5"
-                  step="0.5"
-                  value={scrollSpeed}
-                  onChange={(e) => setScrollSpeed(parseFloat(e.target.value))}
-                  className="w-24"
-                  title={`Velocità: ${scrollSpeed}x`}
-                />
-              )}
-            </div>
-
-            {/* Link esterni e Passa Microfono */}
-            <div className="flex gap-2 ml-auto">
-              <button
-                onClick={selectRandomUser}
-                disabled={users.length === 0}
-                className="flex items-center gap-2 bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={users.length === 0 ? "Nessun partecipante" : "Passa il Microfono"}
-              >
-                <Mic className="w-5 h-5" />
-                <span className="hidden sm:inline">Passa Mic</span>
-              </button>
-              <button
-                onClick={openSpotify}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                title="Apri su Spotify"
-              >
-                <SpotifyIcon className="w-5 h-5" />
-                <span className="hidden sm:inline">Spotify</span>
-              </button>
-              <button
-                onClick={openYouTube}
-                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                title="Apri su YouTube"
-              >
-                <Youtube className="w-5 h-5" />
-                <span className="hidden sm:inline">YouTube</span>
+                <Home className="w-5 h-5" />
+                <span>Home</span>
               </button>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
