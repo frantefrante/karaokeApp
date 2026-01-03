@@ -1347,6 +1347,44 @@ export default function KaraokeApp() {
     };
   }, [backendMode, currentRound?.id]);
 
+  // Keep-alive: aggiorna periodicamente dallo stato su Supabase per non perdere la sincronizzazione spartito
+  useEffect(() => {
+    if (backendMode !== 'supabase' || !supabase) return;
+
+    const interval = setInterval(async () => {
+      const targetId = currentRound?.id || lastRoundRef.current?.id;
+      if (!targetId) return;
+
+      const { data, error } = await supabase
+        .from('k_rounds')
+        .select('id, payload, state, category')
+        .eq('id', targetId)
+        .maybeSingle();
+
+      if (error || !data?.payload) return;
+
+      const payloadObj = data.payload;
+      lastRoundRef.current = { id: data.id, payload: payloadObj };
+
+      if (payloadObj.activeSheetSongId !== undefined) {
+        setActiveSheetSongId(payloadObj.activeSheetSongId);
+      }
+
+      if (currentRound && currentRound.id === data.id) {
+        setCurrentRound(prev => prev ? {
+          ...prev,
+          ...payloadObj,
+          id: data.id,
+          state: data.state,
+          category: data.category,
+          type: payloadObj.type || data.category || prev.type
+        } : prev);
+      }
+    }, 60000); // ogni 60 secondi
+
+    return () => clearInterval(interval);
+  }, [backendMode, supabase, currentRound?.id]);
+
   useEffect(() => {
     if (!isSupabaseReady) {
       console.error('Supabase non configurato. In produzione non è previsto fallback. In dev uso backend locale.');
