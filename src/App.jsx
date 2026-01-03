@@ -444,25 +444,38 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
     }, spinDuration + 3000);
   };
 
+  const arcadeColors = ['#FF0055', '#00FF9F', '#FFE900', '#00D4FF', '#FF6B00', '#C800FF', '#00FF66', '#FF3399'];
+
   return (
     <div className="relative flex flex-col items-center gap-6">
+      <style>{`
+        @keyframes ledBlink {
+          0% { opacity: 0.4; transform: scale(0.85); }
+          100% { opacity: 1; transform: scale(1.15); }
+        }
+        @keyframes confettiFall {
+          0% { transform: translateY(0) rotate(0deg); opacity: 1; }
+          100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+        }
+      `}</style>
+
       {/* Confetti Animation quando c'è un vincitore */}
       {showCelebration && (
         <div className="fixed inset-0 pointer-events-none z-50">
           {[...Array(50)].map((_, i) => (
             <div
               key={i}
-              className="absolute animate-pulse"
+              className="absolute"
               style={{
                 left: `${Math.random() * 100}%`,
                 top: `-10%`,
-                animation: `fall ${2 + Math.random() * 3}s linear infinite`,
+                animation: `confettiFall ${2 + Math.random() * 3}s linear infinite`,
                 animationDelay: `${Math.random() * 2}s`,
                 fontSize: '2rem',
                 opacity: 0.8
               }}
             >
-              {['🎉', '🎊', '⭐', '✨', '🎈'][Math.floor(Math.random() * 5)]}
+              {['🎉', '🎊', '⭐', '✨', '🎈', '🏆', '🎤'][Math.floor(Math.random() * 7)]}
             </div>
           ))}
         </div>
@@ -470,62 +483,198 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
 
       {!winner ? (
         <>
-          <div className="relative w-[500px] h-[500px]">
-            {/* Bordo esterno decorativo */}
-            <div className="absolute inset-0 rounded-full border-[12px] border-yellow-500 shadow-2xl animate-pulse"></div>
+          <div className="relative w-[600px] h-[600px]">
+            {/* Luci LED esterne - 32 cerchietti animati */}
+            {[...Array(32)].map((_, i) => {
+              const angle = (360 / 32) * i;
+              const radius = 280;
+              const x = Math.cos((angle - 90) * Math.PI / 180) * radius;
+              const y = Math.sin((angle - 90) * Math.PI / 180) * radius;
+              const color = arcadeColors[i % arcadeColors.length];
 
-            {/* Ruota principale */}
+              return (
+                <div
+                  key={i}
+                  className="absolute w-4 h-4 rounded-full"
+                  style={{
+                    left: '50%',
+                    top: '50%',
+                    transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
+                    backgroundColor: color,
+                    boxShadow: `0 0 12px ${color}, 0 0 24px ${color}`,
+                    animation: `ledBlink 0.8s ease-in-out ${i * 0.025}s infinite alternate`
+                  }}
+                />
+              );
+            })}
+
+            {/* Cornice dorata esterna */}
             <div
-              className="absolute inset-3 rounded-full bg-gradient-to-br from-purple-600 via-pink-500 to-orange-500 shadow-2xl"
+              className="absolute inset-0 rounded-full"
               style={{
-                transform: `rotate(${rotation}deg)`,
-                transition: spinning ? 'transform 10s cubic-bezier(0.05, 0.7, 0.1, 0.99)' : 'none',
-                boxShadow: '0 0 60px rgba(0, 0, 0, 0.5), inset 0 0 30px rgba(255, 255, 255, 0.3)'
+                background: 'linear-gradient(135deg, #FFD700 0%, #FFA500 25%, #FFD700 50%, #FF8C00 75%, #FFD700 100%)',
+                padding: '15px',
+                boxShadow: '0 0 40px rgba(255,215,0,0.6), inset 0 0 30px rgba(0,0,0,0.4), 0 10px 40px rgba(0,0,0,0.5)'
               }}
             >
-              {/* Centro della ruota */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-24 h-24 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 border-4 border-white shadow-xl z-20"></div>
+              {/* Bordo decorativo interno */}
+              <div className="w-full h-full rounded-full border-4 border-yellow-600/50" style={{ padding: '8px' }}>
+                {/* Ruota principale con SVG per segmenti colorati */}
+                <div className="relative w-full h-full rounded-full overflow-hidden">
+                  <svg className="absolute inset-0 w-full h-full" style={{ transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 10s cubic-bezier(0.05, 0.7, 0.1, 0.99)' : 'none' }}>
+                    {/* Segmenti colorati */}
+                    {items.map((item, i) => {
+                      const anglePerSegment = 360 / items.length;
+                      const startAngle = anglePerSegment * i - 90;
+                      const endAngle = startAngle + anglePerSegment;
 
-              {/* Items sulla ruota */}
-              {items.map((item, i) => {
-                const angle = (360 / items.length) * i;
-                return (
+                      const startRad = startAngle * Math.PI / 180;
+                      const endRad = endAngle * Math.PI / 180;
+
+                      const x1 = 50 + 50 * Math.cos(startRad);
+                      const y1 = 50 + 50 * Math.sin(startRad);
+                      const x2 = 50 + 50 * Math.cos(endRad);
+                      const y2 = 50 + 50 * Math.sin(endRad);
+
+                      const largeArc = anglePerSegment > 180 ? 1 : 0;
+                      const pathData = `M 50 50 L ${x1} ${y1} A 50 50 0 ${largeArc} 1 ${x2} ${y2} Z`;
+
+                      return (
+                        <g key={i}>
+                          <path
+                            d={pathData}
+                            fill={arcadeColors[i % arcadeColors.length]}
+                            stroke="#FFD700"
+                            strokeWidth="3"
+                          />
+                          {/* Effetto metallico */}
+                          <path
+                            d={pathData}
+                            fill="url(#metalGradient)"
+                            opacity="0.3"
+                          />
+                        </g>
+                      );
+                    })}
+
+                    {/* Gradiente per effetto metallico */}
+                    <defs>
+                      <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" style={{ stopColor: 'white', stopOpacity: 0.8 }} />
+                        <stop offset="50%" style={{ stopColor: 'white', stopOpacity: 0 }} />
+                        <stop offset="100%" style={{ stopColor: 'black', stopOpacity: 0.3 }} />
+                      </linearGradient>
+                    </defs>
+                  </svg>
+
+                  {/* Items sulla ruota */}
                   <div
-                    key={i}
-                    className="absolute top-1/2 left-1/2 origin-left"
+                    className="absolute inset-0"
                     style={{
-                      transform: `rotate(${angle}deg) translateX(140px)`,
-                      width: '100px',
-                      marginTop: '-50px'
+                      transform: `rotate(${rotation}deg)`,
+                      transition: spinning ? 'transform 10s cubic-bezier(0.05, 0.7, 0.1, 0.99)' : 'none'
                     }}
                   >
-                    {type === 'users' ? (
-                      <div className="text-center">
-                        <div className="w-24 h-24 rounded-full bg-white mx-auto mb-2 overflow-hidden border-4 border-yellow-300 shadow-2xl">
-                          <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />
+                    {items.map((item, i) => {
+                      const angle = (360 / items.length) * i;
+                      const color = arcadeColors[i % arcadeColors.length];
+
+                      return (
+                        <div
+                          key={i}
+                          className="absolute top-1/2 left-1/2 origin-left"
+                          style={{
+                            transform: `rotate(${angle}deg) translateX(140px)`,
+                            width: '100px',
+                            marginTop: '-50px'
+                          }}
+                        >
+                          {type === 'users' ? (
+                            <div className="text-center">
+                              <div
+                                className="w-14 h-14 rounded-lg mx-auto mb-2 overflow-hidden border-3"
+                                style={{
+                                  borderColor: '#FFD700',
+                                  borderWidth: '3px',
+                                  boxShadow: `0 0 15px ${color}, 0 4px 8px rgba(0,0,0,0.5)`
+                                }}
+                              >
+                                <img src={item.photo} alt={item.name} className="w-full h-full object-cover" />
+                              </div>
+                              <div
+                                className="text-xs font-bold uppercase px-2 py-0.5 rounded inline-block"
+                                style={{
+                                  backgroundColor: color,
+                                  color: '#000',
+                                  letterSpacing: '0.05em',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                  textShadow: '0 0 5px rgba(255,255,255,0.5)'
+                                }}
+                              >
+                                {item.name}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-center">
+                              <Music className="w-14 h-14 mx-auto mb-2" style={{ color: '#FFD700', filter: 'drop-shadow(0 0 10px rgba(255,215,0,0.8))' }} />
+                              <div
+                                className="text-xs font-bold uppercase px-2 py-0.5 rounded inline-block"
+                                style={{
+                                  backgroundColor: color,
+                                  color: '#000',
+                                  letterSpacing: '0.05em',
+                                  boxShadow: '0 2px 4px rgba(0,0,0,0.3)',
+                                  textShadow: '0 0 5px rgba(255,255,255,0.5)'
+                                }}
+                              >
+                                {item.title}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <p className="text-sm font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] bg-black bg-opacity-40 px-2 py-1 rounded-lg">
-                          {item.name}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="text-center">
-                        <Music className="w-16 h-16 text-white mx-auto mb-2 drop-shadow-lg" />
-                        <p className="text-sm font-bold text-white drop-shadow-lg bg-black bg-opacity-40 px-2 py-1 rounded-lg">
-                          {item.title}
-                        </p>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+
+                  {/* Centro della ruota */}
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+                    <svg width="120" height="120" viewBox="0 0 120 120">
+                      <defs>
+                        <radialGradient id="centerGradient">
+                          <stop offset="0%" style={{ stopColor: '#FF0055' }} />
+                          <stop offset="70%" style={{ stopColor: '#AA0033' }} />
+                          <stop offset="100%" style={{ stopColor: '#660022' }} />
+                        </radialGradient>
+                      </defs>
+                      <circle cx="60" cy="60" r="60" fill="#1a1a1a" stroke="#FFD700" strokeWidth="5" />
+                      <circle cx="60" cy="60" r="50" fill="url(#centerGradient)" />
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ fontFamily: 'Impact, sans-serif', color: '#FFD700', fontWeight: 'bold' }}>
+                      <div style={{ fontSize: '16px', lineHeight: '1' }}>KARAOKE</div>
+                      <div style={{ fontSize: '14px', lineHeight: '1' }}>NIGHT</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            {/* Freccia indicatore migliorata */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-6 z-30">
+            {/* Freccia indicatore - Doppio triangolo oro/rosso */}
+            <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-6 z-30" style={{ filter: 'drop-shadow(0 0 15px rgba(255,215,0,0.8))' }}>
               <div className="relative">
-                <div className="w-0 h-0 border-l-[30px] border-l-transparent border-r-[30px] border-r-transparent border-t-[60px] border-t-red-600 drop-shadow-2xl"></div>
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[25px] border-l-transparent border-r-[25px] border-r-transparent border-t-[50px] border-t-yellow-400"></div>
+                {/* Triangolo esterno ORO */}
+                <div className="w-0 h-0" style={{
+                  borderLeft: '30px solid transparent',
+                  borderRight: '30px solid transparent',
+                  borderTop: '60px solid #FFD700'
+                }}></div>
+                {/* Triangolo interno ROSSO */}
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-0 h-0" style={{
+                  borderLeft: '18px solid transparent',
+                  borderRight: '18px solid transparent',
+                  borderTop: '38px solid #FF0055'
+                }}></div>
+                {/* Puntino bianco */}
+                <div className="absolute top-1 left-1/2 -translate-x-1/2 w-2 h-2 rounded-full bg-white"></div>
               </div>
             </div>
           </div>
@@ -534,7 +683,14 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
             <button
               onClick={spinWheel}
               disabled={spinning}
-              className="bg-gradient-to-r from-yellow-400 to-orange-500 text-white text-2xl font-bold px-16 py-5 rounded-full hover:from-yellow-500 hover:to-orange-600 disabled:opacity-50 shadow-2xl transform hover:scale-105 transition-all"
+              className="font-black uppercase px-16 py-6 rounded-full transform transition-all hover:scale-110"
+              style={{
+                background: spinning ? '#374151' : 'linear-gradient(to bottom, #FFD700, #FFA500, #FF8C00)',
+                color: spinning ? '#6B7280' : '#1a1a1a',
+                letterSpacing: '0.1em',
+                boxShadow: spinning ? 'none' : '0 0 30px rgba(255,215,0,0.6), 0 10px 30px rgba(0,0,0,0.4), inset 0 2px 0 rgba(255,255,255,0.4)',
+                fontSize: '1.25rem'
+              }}
             >
               {spinning ? 'GIRANDO...' : '🎰 GIRA LA RUOTA!'}
             </button>
@@ -549,23 +705,52 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
       ) : (
         <div className="text-center">
           <div className="animate-bounce mb-6">
-            <h2 className="text-6xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 via-pink-500 to-purple-600 mb-4">
+            <h2
+              className="text-6xl font-bold mb-4"
+              style={{
+                background: 'linear-gradient(to right, #FFD700, #FF6B00, #FF0055, #FF6B00, #FFD700)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text'
+              }}
+            >
               🎉 VINCITORE! 🎉
             </h2>
           </div>
           {type === 'users' ? (
-            <div className="transform scale-110 transition-all">
+            <div className="transform scale-110 transition-all relative">
+              {/* Glow radiale dietro avatar */}
+              <div
+                className="absolute inset-0 mx-auto w-48 h-48 rounded-full"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,215,0,0.6) 0%, transparent 70%)',
+                  filter: 'blur(20px)',
+                  transform: 'translateY(25%)'
+                }}
+              ></div>
               <img
                 src={winner.photo}
                 alt={winner.name}
-                className="w-48 h-48 rounded-full mx-auto border-8 border-yellow-400 mb-4 shadow-2xl animate-pulse"
+                className="w-48 h-48 rounded-full mx-auto mb-4 relative z-10"
+                style={{
+                  border: '8px solid #FFD700',
+                  boxShadow: '0 0 50px rgba(255,215,0,0.8), 0 20px 40px rgba(0,0,0,0.5)'
+                }}
               />
               <p className="text-5xl font-bold text-gray-800 mb-2">{winner.name}</p>
               <p className="text-2xl text-gray-600">È il tuo turno di cantare! 🎤</p>
             </div>
           ) : (
-            <div>
-              <Music className="w-32 h-32 text-yellow-400 mx-auto mb-4" />
+            <div className="relative">
+              <div
+                className="absolute inset-0 mx-auto w-32 h-32"
+                style={{
+                  background: 'radial-gradient(circle, rgba(255,215,0,0.6) 0%, transparent 70%)',
+                  filter: 'blur(20px)',
+                  transform: 'translateY(25%)'
+                }}
+              ></div>
+              <Music className="w-32 h-32 mx-auto mb-4 relative z-10" style={{ color: '#FFD700', filter: 'drop-shadow(0 0 30px rgba(255,215,0,0.8))' }} />
               <p className="text-4xl font-bold">{winner.title}</p>
               <p className="text-2xl text-gray-600">{winner.artist}</p>
             </div>
