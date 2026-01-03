@@ -447,7 +447,10 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
       // Mostra celebrazione dopo un breve delay
       setTimeout(() => {
         setShowCelebration(true);
-        if (onComplete) onComplete(selectedWinner);
+        // Chiama onComplete dopo 5 secondi per dare tempo di vedere il vincitore
+        setTimeout(() => {
+          if (onComplete) onComplete(selectedWinner);
+        }, 5000);
       }, 500);
     }, spinDuration + 3000);
   };
@@ -705,7 +708,7 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
           )}
 
           {spinning && (
-            <p className="text-xl font-semibold text-gray-700 animate-pulse">
+            <p className="text-xl font-semibold animate-pulse" style={{ color: '#FFD700', textShadow: '0 0 10px rgba(255,215,0,0.8), 0 2px 4px rgba(0,0,0,0.8)' }}>
               Chi sarà il fortunato? 🤔
             </p>
           )}
@@ -4329,14 +4332,6 @@ export default function KaraokeApp() {
                         onComplete={handleWheelComplete}
                         preselectedWinnerIndex={currentRound.preselectedWinnerIndex}
                       />
-                      <div className="text-center mt-4">
-                        <button
-                          onClick={() => window.open(`${window.location.origin}${window.location.pathname}?view=display`, '_blank')}
-                          className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl hover:from-purple-700 hover:to-blue-700 transition-all font-semibold shadow-lg hover:shadow-xl"
-                        >
-                          📺 Apri anche su Display Esterno
-                        </button>
-                      </div>
                     </div>
                   )}
 
