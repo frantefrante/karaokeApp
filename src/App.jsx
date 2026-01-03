@@ -1007,6 +1007,22 @@ export default function KaraokeApp() {
   const [selectedGameMode, setSelectedGameMode] = useState(null); // 'poll', 'duet', 'wheel', 'band_picks', 'pass_mic'
   // NUOVO: Stato per spartito attivo sincronizzato tra dispositivi
   const [activeSheetSongId, setActiveSheetSongId] = useState(null);
+  const sanitizePayloadForSync = (payload) => {
+    if (!payload) return payload;
+    const clone = { ...payload };
+    if (Array.isArray(clone.songs)) {
+      clone.songs = clone.songs.map(({ chord_sheet, ...rest }) => rest);
+    }
+    if (clone.selectedSong) {
+      const { chord_sheet, ...rest } = clone.selectedSong;
+      clone.selectedSong = rest;
+    }
+    if (clone.song) {
+      const { chord_sheet, ...rest } = clone.song;
+      clone.song = rest;
+    }
+    return clone;
+  };
 
   // Pulisci compactSection quando viene selezionata una modalità di gioco
   useEffect(() => {
@@ -1035,8 +1051,9 @@ export default function KaraokeApp() {
     const basePayload = currentRound || lastRoundRef.current?.payload;
 
     if (backendMode === 'supabase' && supabase && targetRoundId) {
+      const sanitized = sanitizePayloadForSync(basePayload);
       const updatedPayload = {
-        ...(basePayload || {}),
+        ...(sanitized || {}),
         activeSheetSongId: songId
       };
 
@@ -1062,8 +1079,9 @@ export default function KaraokeApp() {
     const basePayload = currentRound || lastRoundRef.current?.payload;
 
     if (backendMode === 'supabase' && supabase && targetRoundId) {
+      const sanitized = sanitizePayloadForSync(basePayload);
       const updatedPayload = {
-        ...(basePayload || {}),
+        ...(sanitized || {}),
         activeSheetSongId: null
       };
 
@@ -2279,9 +2297,16 @@ export default function KaraokeApp() {
     }
 
     setCurrentBandPickIndex(0);
+    const songsLightweight = bandPicksList.map(({ id, title, artist, year }) => ({
+      id,
+      title,
+      artist,
+      year: year || null
+    }));
+
     const payload = {
       type: 'band_picks',
-      songs: bandPicksList,
+      songs: songsLightweight,
       currentIndex: 0,
       state: 'showing'
     };
@@ -2300,8 +2325,11 @@ export default function KaraokeApp() {
       }
 
       setCurrentRound({ ...payload, id: data.id });
+      lastRoundRef.current = { id: data.id, payload };
     } else {
-      setCurrentRound({ ...payload, id: Date.now() });
+      const localId = Date.now();
+      setCurrentRound({ ...payload, id: localId });
+      lastRoundRef.current = { id: localId, payload };
     }
 
     setRoundMessage(`🎸 Scaletta avviata: ${bandPicksList.length} brani`);
@@ -4235,8 +4263,12 @@ export default function KaraokeApp() {
                                 </button>
                                 <button
                                   onClick={() => {
-                                    const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${song.id}`;
-                                    window.open(url, '_blank');
+                                    const fullSong = songLibrary.find(s => s.id === song.id || s.id == song.id) || song;
+                                    if (fullSong.chord_sheet) {
+                                      setActiveSheet(fullSong.id);
+                                      const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${fullSong.id}`;
+                                      window.open(url, '_blank');
+                                    }
                                   }}
                                   className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold transition-colors"
                                   title="Proietta spartito su display esterno"
@@ -4638,18 +4670,13 @@ export default function KaraokeApp() {
                     <div className="mt-8 flex gap-4 justify-center">
                       <button
                         onClick={() => {
-                          setViewingSong(currentRound.songs[currentRound.currentIndex || 0]);
-                          setSongViewContext('display');
-                        }}
-                        className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors text-lg"
-                        title="Apri spartito nella finestra corrente"
-                      >
-                        📄 Spartito
-                      </button>
-                      <button
-                        onClick={() => {
-                          const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${currentRound.songs[currentRound.currentIndex || 0].id}`;
-                          window.open(url, '_blank');
+                          const currentSong = currentRound.songs[currentRound.currentIndex || 0];
+                          const fullSong = songLibrary.find(s => s.id === currentSong.id || s.id == currentSong.id) || currentSong;
+                          if (fullSong.chord_sheet) {
+                            setActiveSheet(fullSong.id);
+                            const url = `${window.location.origin}${window.location.pathname}?view=projection&songId=${fullSong.id}`;
+                            window.open(url, '_blank');
+                          }
                         }}
                         className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-semibold transition-colors text-lg"
                         title="Proietta spartito su display esterno"
