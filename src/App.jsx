@@ -354,12 +354,20 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
+  const wheelRef = useRef(null);
 
   useEffect(() => {
     if (autoSpin && !spinning && !winner) {
       spinWheel();
     }
   }, [autoSpin]);
+
+  // Scroll automatico verso la ruota quando inizia a girare
+  useEffect(() => {
+    if (spinning && wheelRef.current) {
+      wheelRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [spinning]);
 
   const spinWheel = () => {
     if (spinning) return;
@@ -483,7 +491,7 @@ function WheelOfFortune({ items, type = 'users', onComplete, autoSpin = false, p
 
       {!winner ? (
         <>
-          <div className="relative w-[600px] h-[600px]">
+          <div ref={wheelRef} className="relative w-[600px] h-[600px]">
             {/* Luci LED esterne - 32 cerchietti animati */}
             {[...Array(32)].map((_, i) => {
               const angle = (360 / 32) * i;
